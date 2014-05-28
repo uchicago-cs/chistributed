@@ -2,13 +2,15 @@
 start listener
 start spammer --spammer --peer-names listener
 drop 2
-after 4 {
-    drop 2 to listener
-    get listener foo
-}
+drop 4 listener
+drop 4 from spammer
+#after 4 {
+#    drop 2 to listener
+#    get listener foo
+#}
 get listener foo
-after 8 {
-    tamper 1
-    get listener foo
-    tamper 2 from spammer
-}
+#after 8 {
+#    tamper 1
+#    get listener foo
+#    tamper 2 from spammer
+#}

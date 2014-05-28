@@ -41,6 +41,42 @@ class Message(dict):
     msg_frames = [destination, '', b]
     socket.send_multipart(msg_frames)
 
+class MessageConditions:
+  def __init__(self, broker):
+    self.broker = broker
+    self.drop_conditions = []
+
+  def add_drop(self, command):
+    assert command['command'] == 'drop'
+    self.drop_conditions.append(command)
+
+  def check_drop_conditions(self, message):
+    '''
+    Returns (should_drop, blacklist) where should_drop is true iff the
+    message's sender has messages to be blocked, and blacklist is a list of
+    nodes that should not receive the message. Updates drop conditions
+    accordingly.
+    '''
+    should_drop = False
+    should_receive = set(message['destination'])
+    sender_name = self.broker.nodes_by_sender()[message.sender]
+    for cond in self.drop_conditions:
+      if cond['count'] <= 0: continue
+      if ('name' not in cond):
+        should_drop = True
+        cond['count'] -= 1
+      elif 'from' in cond and cond['name'] == sender_name:
+        should_drop = True
+        cond['count'] -= 1
+      elif 'from' not in cond and cond['name'] in message['destination']:
+        # this could be an unqualified (no to/from) or a to
+        should_receive.discard(cond['name'])
+        cond['count'] -= 1
+
+      if cond['count'] == 0: self.drop_conditions.remove(cond)
+
+    return (should_drop, should_receive)
+
 class Broker:
   def __init__(self, node_executable, pub_endpoint, router_endpoint, script_filename=None):
     self.loop = ioloop.ZMQIOLoop.instance()
@@ -73,6 +109,8 @@ class Broker:
     self.logger = logging.getLogger('broker')
 
     self.node_executable = node_executable
+
+    self.message_conditions = MessageConditions(self)
 
     # Load script if it exists
     self.script = None
@@ -139,10 +177,10 @@ class Broker:
       self.log_message(message)
 
   def handle(self, message):
-      ty = message['type']
-      # Default to using the handle_unknown_type handler
-      f = self.message_handlers.get(ty, self.handle_unknown_type)
-      return f(message)
+    ty = message['type']
+    # Default to using the handle_unknown_type handler
+    f = self.message_handlers.get(ty, self.handle_unknown_type)
+    return f(message)
 
   def handle_unknown_type(self, message):
     '''
@@ -150,9 +188,13 @@ class Broker:
     the destination with only the recipient's name.
     '''
     m = Message(message)
-    for dest in message['destination']:
-      m['destination'] = [dest]
-      m.send(self.pub, dest)
+    should_drop, should_receive = self.message_conditions.check_drop_conditions(message)
+    if not should_drop:
+      for dest in should_receive:
+          m['destination'] = [dest]
+          m.send(self.pub, dest)
+    else:
+      self.log("Dropping message: {}".format(message))
 
     return Message({'type': 'okay'})
 
@@ -273,7 +315,8 @@ class Broker:
         'stop': self.stop_node,
         'get': self.send_get,
         'set': self.send_set,
-        'json': self.send_json
+        'json': self.send_json,
+        'drop': self.message_conditions.add_drop
       }
       self.script_conditions = set()
       self.current_request_id = 0
@@ -311,8 +354,7 @@ class Broker:
     if not hasattr(self, "devnull"):
       self.devnull = open(os.devnull, "w")
 
-    # proc = subprocess.Popen(args, shell=True, stdout=self.devnull, stderr=self.devnull)
-    proc = subprocess.Popen(args, shell=True)
+    proc = subprocess.Popen(args, shell=True, stdout=self.devnull, stderr=self.devnull)
     self.node_pids[command['name']] = proc
 
     self.script_conditions.add('helloResponse')
@@ -405,7 +447,6 @@ class Broker:
       'destination': [dest]
     })
     self.pending_requests['setResponse'].send(self.pub, dest)
-
     pass
 
   def send_json(self, command):

@@ -1,8 +1,6 @@
 import json
 import sys
 import signal
-import datetime
-import tornado
 import zmq
 from zmq.eventloop import ioloop, zmqstream
 ioloop.install()

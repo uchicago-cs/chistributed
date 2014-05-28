@@ -22,7 +22,6 @@ def make_after(tokens):
   c['commands'] = tokens.commands.asList()
   return c
 
-
 ## Grammar
 ws = ' \t'
 ParserElement.setDefaultWhitespaceChars(ws)
@@ -38,10 +37,13 @@ name, key, value = map(lambda x: Word(alphanums)(x),
 params = restOfLine("params")
 _json = restOfLine("json")
 
-count = Word(nums)("count")
+count = Word(nums)("count").setParseAction(lambda x: int(x[0]))
+# count = OneOrMore(nums)("count")
 
 start, stop, get, set, send, drop, tamper, after, to_, from_ = map(lambda x: Keyword(x),
     "start stop get set send drop tamper after to from".split())
+to_ = to_("to").setParseAction(lambda x: True)
+from_ = from_("from").setParseAction(lambda x: True)
 
 cmds = Forward()
 
@@ -50,8 +52,8 @@ stopcmd = (stop + name).setParseAction(make_stop) + EOL
 setcmd = ((set + name + key + value) | (set + key + value)).setParseAction(make_set) + EOL
 getcmd = ((get + name + key) | (get + key)).setParseAction(make_get) + EOL
 sendcmd = (send + _json).setParseAction(make_send) + EOL
-dropcmd = ((drop + count + EOL) | (drop + count + (to_ | from_) + name + EOL)).setParseAction(make_drop)
-tampercmd = ((tamper + count + EOL) | (tamper + count + (to_ | from_) + name + EOL)).setParseAction(make_tamper)
+dropcmd = ((drop + count + EOL) | (drop + count + Optional(to_ | from_) + name + EOL)).setParseAction(make_drop)
+tampercmd = ((tamper + count + EOL) | (tamper + count + Optional(to_ | from_) + name + EOL)).setParseAction(make_tamper)
 aftercmd = (after + count + LBRACE + EOL + cmds("commands") + RBRACE + EOL).setParseAction(make_after)
 
 cmds << Group(OneOrMore(startcmd | stopcmd | getcmd | setcmd | sendcmd | dropcmd | tampercmd | aftercmd)).setWhitespaceChars(" \t")
@@ -62,7 +64,7 @@ cmds.ignore(comment)
 
 def parse(string=None, filename=None):
   if filename is not None:
-    return cmds.parseFile(filename, parseAll=True)[0].asList()
+    return cmds.parseFile(filename, parseAll=False)[0].asList()
   elif string is not None:
     return cmds.parseString(string)[0].asList()
   else:
