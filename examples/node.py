@@ -88,7 +88,7 @@ class Node:
       self.spam_count = 0
     self.spam_count += 1
     t = self.loop.time()
-    self.req.send_json({'type': 'spam', 'id': self.spam_count, 'timestamp': t, 'source': self.name, 'destination': self.peer_names})
+    self.req.send_json({'type': 'spam', 'id': self.spam_count, 'timestamp': t, 'source': self.name, 'destination': self.peer_names, 'value': 42})
     self.loop.add_timeout(t + 1, self.send_spam)
 
   def shutdown(self, sig, frame):

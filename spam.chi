@@ -1,11 +1,12 @@
 # this demonstrates unreliability features
 start listener
 start spammer --spammer --peer-names listener
+drop 2
 after 4 {
     drop 2 to listener
     get listener foo
+    tamper 4
 }
-#drop 2
 #drop 4 listener
 #drop 4 from spammer
 #get listener foo

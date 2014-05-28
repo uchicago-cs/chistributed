@@ -46,18 +46,21 @@ class MessageConditions:
     self.broker = broker
     self.drop_conditions = []
     self.after_conditions = []
+    self.tamper_conditions = []
 
   def add_condition(self, command):
     if (command['command'] == 'drop'):
       self.drop_conditions.append(command)
     elif command['command'] == 'after':
       self.after_conditions.append(command)
+    elif command['command'] == 'tamper':
+      self.tamper_conditions.append(command)
 
   def check_drop_conditions(self, message):
     '''
-    Returns (should_drop, blacklist) where should_drop is true iff the
-    message's sender has messages to be blocked, and blacklist is a list of
-    nodes that should not receive the message. Updates drop conditions
+    Returns (should_drop, should_receive) where should_drop is true iff the
+    message's sender has messages to be blocked, and should_receive is a list
+    of nodes that should receive the message. Updates drop conditions
     accordingly.
     '''
     should_drop = False
@@ -89,6 +92,28 @@ class MessageConditions:
         cond['count'] -= 1
       if cond['count'] == 0:
         self.broker.script = cond['commands'] + self.broker.script
+
+  def check_tamper_conditions(self, message):
+    '''
+    Returns (tamper_all, tamper_destinations) where tamper_all is true iff
+    every message should be tampered and tamper_destinations is a set of
+    destinations that should be tampered with.
+    '''
+    tamper_all = False
+    tamper_destinations = set()
+    for cond in self.tamper_conditions:
+      if cond['count'] == 0:
+        self.tamper_conditions.remove(cond)
+        continue
+      m = self.matches(cond, message)
+      (any_match, sender_match, destination_matches) = m
+      if any_match or sender_match:
+        tamper_all = True
+      tamper_destinations = tamper_destinations.union(destination_matches)
+      if any(m):
+        cond['count'] -= 1
+
+    return (tamper_all, tamper_destinations)
 
   def matches(self, cond, message):
     '''
@@ -218,12 +243,19 @@ class Broker:
     the destination with only the recipient's name.
     '''
     m = Message(message)
-    should_drop, should_receive = self.message_conditions.check_drop_conditions(message)
+    should_drop, should_receive = self.message_conditions.check_drop_conditions(m)
     self.message_conditions.check_after_conditions(m)
+    original_value = m.get('value')
+    if original_value:
+      tamper_all, tamper_destinations = self.message_conditions.check_tamper_conditions(m)
     if not should_drop:
       for dest in should_receive:
-          m['destination'] = [dest]
-          m.send(self.pub, dest)
+        if original_value and tamper_all or dest in tamper_destinations:
+          m['value'] = random.randint(0,1000)
+        else:
+          m['value'] = original_value
+        m['destination'] = [dest]
+        m.send(self.pub, dest)
 
     return Message({'type': 'okay'})
 
@@ -346,7 +378,8 @@ class Broker:
         'set': self.send_set,
         'json': self.send_json,
         'drop': self.message_conditions.add_condition,
-        'after': self.message_conditions.add_condition
+        'after': self.message_conditions.add_condition,
+        'tamper': self.message_conditions.add_condition
       }
       self.script_conditions = set()
       self.current_request_id = 0
