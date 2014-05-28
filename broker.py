@@ -45,10 +45,13 @@ class MessageConditions:
   def __init__(self, broker):
     self.broker = broker
     self.drop_conditions = []
+    self.after_conditions = []
 
-  def add_drop(self, command):
-    assert command['command'] == 'drop'
-    self.drop_conditions.append(command)
+  def add_condition(self, command):
+    if (command['command'] == 'drop'):
+      self.drop_conditions.append(command)
+    elif command['command'] == 'after':
+      self.after_conditions.append(command)
 
   def check_drop_conditions(self, message):
     '''
@@ -59,23 +62,54 @@ class MessageConditions:
     '''
     should_drop = False
     should_receive = set(message['destination'])
-    sender_name = self.broker.nodes_by_sender()[message.sender]
     for cond in self.drop_conditions:
-      if cond['count'] <= 0: continue
-      if ('name' not in cond):
+      if cond['count'] == 0:
+        self.drop_conditions.remove(cond)
+        continue
+      m = self.matches(cond, message)
+      (any_match, sender_match, destination_matches) = m
+      if any_match or sender_match:
         should_drop = True
+      should_receive.difference_update(destination_matches)
+      if any(m):
         cond['count'] -= 1
-      elif 'from' in cond and cond['name'] == sender_name:
-        should_drop = True
-        cond['count'] -= 1
-      elif 'from' not in cond and cond['name'] in message['destination']:
-        # this could be an unqualified (no to/from) or a to
-        should_receive.discard(cond['name'])
-        cond['count'] -= 1
-
-      if cond['count'] == 0: self.drop_conditions.remove(cond)
 
     return (should_drop, should_receive)
+
+  def check_after_conditions(self, message):
+    '''
+    Tallies against existing after conditions, and pushes their commands to the
+    broker's script queue for any that hits zero.
+    '''
+    for cond in self.after_conditions:
+      if cond['count'] == 0:
+        self.after_conditions.remove(cond)
+        continue
+      if any(self.matches(cond, message)):
+        cond['count'] -= 1
+      if cond['count'] == 0:
+        self.broker.script = cond['commands'] + self.broker.script
+
+  def matches(self, cond, message):
+    '''
+    Check if a condition matches , returning a triple:
+    (any_match, sender_match, destination_matches)
+    Where any_match is True if the condition doesn't specify a target,
+    sender_match is True if the sender matches, and destination_matches is a
+    list of destinations that match.
+    '''
+    sender_name = self.broker.nodes_by_sender().get(message.sender)
+    any_match = False
+    sender_match = False
+    destination_matches = set()
+    if 'name' not in cond:
+      any_match = True
+    elif 'from' in cond and cond['name'] == sender_name:
+      sender_match = True
+    elif 'from' not in cond and cond['name'] in message['destination']:
+      # this could be unqualified (no to/from) or a to
+      destination_matches.add(cond['name'])
+    return (any_match, sender_match, destination_matches)
 
 class Broker:
   def __init__(self, node_executable, pub_endpoint, router_endpoint, script_filename=None):
@@ -168,13 +202,9 @@ class Broker:
         'setResponse': self.make_handle_response('setResponse')
       }
 
-    try:
-      resp = self.handle(message)
-      resp.send(self.router, message.sender)
-      self.run_script(message)
-    except KeyError as e: # catchall for malformed messages
-      self.log("Missing key: " + str(e))
-      self.log_message(message)
+    resp = self.handle(message)
+    resp.send(self.router, message.sender)
+    self.run_script(message)
 
   def handle(self, message):
     ty = message['type']
@@ -189,12 +219,11 @@ class Broker:
     '''
     m = Message(message)
     should_drop, should_receive = self.message_conditions.check_drop_conditions(message)
+    self.message_conditions.check_after_conditions(m)
     if not should_drop:
       for dest in should_receive:
           m['destination'] = [dest]
           m.send(self.pub, dest)
-    else:
-      self.log("Dropping message: {}".format(message))
 
     return Message({'type': 'okay'})
 
@@ -316,7 +345,8 @@ class Broker:
         'get': self.send_get,
         'set': self.send_set,
         'json': self.send_json,
-        'drop': self.message_conditions.add_drop
+        'drop': self.message_conditions.add_condition,
+        'after': self.message_conditions.add_condition
       }
       self.script_conditions = set()
       self.current_request_id = 0
