@@ -1,17 +1,18 @@
-from Queue import Queue
-import random
 import json
 import sys
 import signal
-import time
+import datetime
+import tornado
 import zmq
 from zmq.eventloop import ioloop, zmqstream
 ioloop.install()
 
 class Node:
   def __init__(self, node_name, pub_endpoint, router_endpoint, spammer, peer_names):
-    self.loop = ioloop.ZMQIOLoop.current()
+    self.loop = ioloop.ZMQIOLoop.instance()
     self.context = zmq.Context()
+
+    self.connected = False
 
     # SUB socket for receiving messages from the broker
     self.sub_sock = self.context.socket(zmq.SUB)
@@ -70,9 +71,27 @@ class Node:
       self.req.send_json({'type': 'setResponse', 'id': msg['id'], 'value': v})
     elif msg['type'] == 'hello':
       # should be the very first message we see
-      self.req.send_json({'type': 'hello', 'source': self.name})
+      if not self.connected:
+        self.connected = True
+        self.req.send_json({'type': 'helloResponse', 'source': self.name})
+        # if we're a spammer, start spamming!
+        if self.spammer:
+          self.loop.add_callback(self.send_spam)
+    elif msg['type'] == 'spam':
+      self.req.send_json({'type': 'log', 'spam': msg})
     else:
       self.req.send_json({'type': 'log', 'debug': {'event': 'unknown', 'node': self.name}})
+
+  def send_spam(self):
+    '''
+    Periodically send spam, with a counter to see which are dropped.
+    '''
+    if not hasattr(self, 'spam_count'):
+      self.spam_count = 0
+    self.spam_count += 1
+    t = self.loop.time()
+    self.req.send_json({'type': 'spam', 'id': self.spam_count, 'timestamp': t, 'source': self.name, 'destination': self.peer_names})
+    self.loop.add_timeout(t + 1, self.send_spam)
 
   def shutdown(self, sig, frame):
     self.loop.stop()

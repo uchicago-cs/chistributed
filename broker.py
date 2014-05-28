@@ -43,7 +43,7 @@ class Message(dict):
 
 class Broker:
   def __init__(self, node_executable, pub_endpoint, router_endpoint, script_filename=None):
-    self.loop = ioloop.ZMQIOLoop.current()
+    self.loop = ioloop.ZMQIOLoop.instance()
     self.context = zmq.Context()
 
     # PUB socket for sending messages to nodes
@@ -175,8 +175,8 @@ class Broker:
 
     self.node_zids[node_name] = message.sender
 
-    if self.script and 'hello' in self.script_conditions:
-      self.script_conditions.remove('hello')
+    if self.script and 'helloResponse' in self.script_conditions:
+      self.script_conditions.remove('helloResponse')
 
     self.log(node_name + " connected")
 
@@ -186,7 +186,7 @@ class Broker:
     '''
     Print or log to a file the given message, along with sender.
     '''
-    # self.log_message(message)
+    self.log_message(message)
     return Message({'type': 'okay'})
 
   def make_handle_response(self, ty):
@@ -209,23 +209,23 @@ class Broker:
 
       if self.script is None: return ok
       if ty not in self.script_conditions:
-        self.log("Did not expect {}, expected {}".format(ty, self.script_conditions))
+        self.log("{}: not in list of expected responses: {}".format(ty, self.script_conditions))
         return err
       if ty not in self.pending_requests:
         self.log("Expected {}, but no request found (found {})".format(ty, self.pending_requests.keys()))
         return err
       if not node_name == req['destination'][0]:
-        self.log("Different node than expected: {}, expected {}".format(node_name, req['destination'][0]))
+        self.log("{}: different node than expected: expected {}, expected {}".format(ty, node_name, req['destination'][0]))
         return err
       if not message['id'] == self.current_request_id:
-        self.log("Different request ID than expected: {}, expected {}".format(message['id'], req['id']))
+        self.log("{}: different request ID than expected: {}, expected {}".format(ty, message['id'], req['id']))
         return err
       if 'error' in message:
-        self.log("{}: {} {} ERROR: {}".format(node_name, ty, req['key'], message['error']))
+        self.log("{} ({}): {} ERROR: {}".format(ty, node_name, req['key'], message['error']))
         self.script_conditions.remove(ty)
         return ok
       else:
-        self.log("{}: {} {} => {}".format(node_name, ty, req['key'], message['value']))
+        self.log("{} ({}): {} => {}".format(ty, node_name, req['key'], message['value']))
         self.script_conditions.remove(ty)
         return ok
 
@@ -311,10 +311,11 @@ class Broker:
     if not hasattr(self, "devnull"):
       self.devnull = open(os.devnull, "w")
 
-    proc = subprocess.Popen(args, shell=True, stdout=self.devnull, stderr=self.devnull)
+    # proc = subprocess.Popen(args, shell=True, stdout=self.devnull, stderr=self.devnull)
+    proc = subprocess.Popen(args, shell=True)
     self.node_pids[command['name']] = proc
 
-    self.script_conditions.add('hello')
+    self.script_conditions.add('helloResponse')
 
     self.make_hello_sender(command['name'])()
 
@@ -326,7 +327,7 @@ class Broker:
       'destination': [node_name]
     })
     def hello_sender():
-      if 'hello' in self.script_conditions:
+      if 'helloResponse' in self.script_conditions:
         msg.send(self.pub, node_name)
         self.loop.add_timeout(self.loop.time() + 0.1, hello_sender)
       return
@@ -352,14 +353,14 @@ class Broker:
       try:
         dest = command['name']
       except KeyError as e:
-        self.log("No such node " + str(e) + "will try again on next 'hello'")
+        self.log("No such node " + str(e) + "will try again on next 'helloResponse'")
         self.script.insert(0, command)
-        self.script_conditions.add('hello')
+        self.script_conditions.add('helloResponse')
         return
     elif len(self.node_zids) == 0:
-      self.log("No nodes online, will try again on next 'hello'")
+      self.log("No nodes online, will try again on next 'helloResponse'")
       self.script.insert(0, command)
-      self.script_conditions.add('hello')
+      self.script_conditions.add('helloResponse')
       return
     else:
       dest = random.choice(self.node_zids.keys())
@@ -382,14 +383,14 @@ class Broker:
       try:
         dest = command['name']
       except KeyError as e:
-        self.log("No such node " + str(e) + "will try again on next 'hello'")
+        self.log("No such node " + str(e) + "will try again on next 'helloResponse'")
         self.script.insert(0, command)
-        self.script_conditions.add('hello')
+        self.script_conditions.add('helloResponse')
         return
     elif len(self.node_zids) == 0:
-      self.log("No nodes online, will try again on next 'hello'")
+      self.log("No nodes online, will try again on next 'helloResponse'")
       self.script.insert(0, command)
-      self.script_conditions.add('hello')
+      self.script_conditions.add('helloResponse')
       return
     else:
       dest = random.choice(self.node_zids.keys())
