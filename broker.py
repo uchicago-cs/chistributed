@@ -123,7 +123,8 @@ class Broker:
     # handler dict
     if not hasattr(self, "message_handlers"):
       self.message_handlers = {
-        'hello': self.handle_hello,
+        'helloResponse': self.handle_hello,
+        'hello': self.handle_hello, # for backwards compatibility
         'log': self.handle_log,
         'getResponse': self.make_handle_response('getResponse'),
         'setResponse': self.make_handle_response('setResponse')
