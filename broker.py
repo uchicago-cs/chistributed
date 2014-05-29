@@ -214,6 +214,7 @@ class Broker:
     self.node_executable = node_executable
 
     self.message_conditions = MessageConditions(self)
+    self.partitions = {}
 
     # Load script if it exists
     self.script = None
@@ -286,22 +287,29 @@ class Broker:
     Forward the message to every node listed in field 'destination', replacing
     the destination with only the recipient's name.
     '''
-    m = Message(message)
-    should_drop, should_receive = self.message_conditions.check_drop_conditions(m)
-    should_delay, delay_destinations, delayed_messages = self.message_conditions.check_delay_conditions(m)
+    should_drop, should_receive = self.message_conditions.check_drop_conditions(message)
+    should_delay, delay_destinations, delayed_messages = self.message_conditions.check_delay_conditions(message)
     should_receive.difference_update(delay_destinations)
-    self.message_conditions.check_after_conditions(m)
-    original_value = m.get('value')
+    self.message_conditions.check_after_conditions(message)
+    original_value = message.get('value')
     if original_value:
-      tamper_all, tamper_destinations = self.message_conditions.check_tamper_conditions(m)
+      tamper_all, tamper_destinations = self.message_conditions.check_tamper_conditions(message)
+
     if not should_drop and not should_delay:
+      if message.sender:
+        node_name = self.nodes_by_sender()[message.sender]
+        partition = self.find_partition(node_name)
+        # if we're in a partition, only send to those also in the partition
+        if partition:
+          should_receive = partition.difference(should_receive)
+
       for dest in should_receive:
         if original_value and tamper_all or dest in tamper_destinations:
-          m['value'] = random.randint(0,1000)
+          message['value'] = random.randint(0,1000)
         else:
-          m['value'] = original_value
-        m['destination'] = [dest]
-        m.send(self.pub, dest)
+          message['value'] = original_value
+        message['destination'] = [dest]
+        message.send(self.pub, dest)
 
     for msg in delayed_messages:
       for dest in msg['destination']:
@@ -409,6 +417,14 @@ class Broker:
     '''
     self.logger.info(log_msg)
 
+  def find_partition(self, node_name):
+    '''
+    Retrieve the first encountered partition that the node is in.
+    '''
+    for part in self.partitions.values():
+      if node_name in part:
+        return part
+
   # ============================
   # Simulation control/scripting
   # ============================
@@ -430,7 +446,9 @@ class Broker:
         'drop': self.message_conditions.add_condition,
         'delay': self.message_conditions.add_condition,
         'after': self.message_conditions.add_condition,
-        'tamper': self.message_conditions.add_condition
+        'tamper': self.message_conditions.add_condition,
+        'split': self.split_network,
+        'join': self.join_network
       }
       self.script_conditions = set()
       self.current_request_id = 0
@@ -565,6 +583,22 @@ class Broker:
 
   def send_json(self, command):
     self.handle(Message(command['json']))
+    pass
+
+  def split_network(self, command):
+    if self.partitions.get(command['name']):
+      self.log("Attempted to create duplicate partition {}".format(command['name']))
+      return
+
+    self.log("Created partition {}".format(command['name']))
+    self.partitions[command['name']] = set(command['nodes'])
+
+  def join_network(self, command):
+    if not self.partitions.get(command['name']):
+      self.log("Attempted to delete nonexistent partition {}".format(command['name']))
+
+    self.log("Deleted partition {}".format(command['name']))
+    del self.partitions[command['name']]
     pass
 
 if __name__ == '__main__':

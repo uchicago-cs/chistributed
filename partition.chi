@@ -1,0 +1,11 @@
+# this demonstrates network partition features
+start A1 --spammer --peer-names A2,B1,B2
+start A2
+start B1
+start B2
+after 2 {
+  split A A1,A2
+after 2{
+  join A
+}
+}
