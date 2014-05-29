@@ -306,6 +306,7 @@ class Broker:
     self.message_conditions.check_after_conditions(message)
 
     original_value = message.get('value')
+    tamper_all, tamper_destinations = False, set()
     if original_value:
       tamper_all, tamper_destinations = self.message_conditions.check_tamper_conditions(message)
 
@@ -452,7 +453,7 @@ class Broker:
         'stop': self.stop_node,
         'get': self.send_get,
         'set': self.send_set,
-        'json': self.send_json,
+        'send': self.send_json,
         'drop': self.message_conditions.add_condition,
         'delay': self.message_conditions.add_condition,
         'after': self.message_conditions.add_condition,
