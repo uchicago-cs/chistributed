@@ -108,12 +108,13 @@ class MessageConditions:
     broker's script queue for any that hits zero.
     '''
     for cond in self.after_conditions:
-      if cond['count'] == 0:
+      # use 1 instead of 0 in order to enact these as the "0th" message comes in
+      if cond['count'] == 1: 
         self.after_conditions.remove(cond)
         continue
       if any(self.matches(cond, message)):
         cond['count'] -= 1
-      if cond['count'] == 0:
+      if cond['count'] == 1:
         self.broker.script = cond['commands'] + self.broker.script
 
   def check_delay_conditions(self, message):
@@ -287,22 +288,28 @@ class Broker:
     Forward the message to every node listed in field 'destination', replacing
     the destination with only the recipient's name.
     '''
-    should_drop, should_receive = self.message_conditions.check_drop_conditions(message)
+    should_receive = set(message['destination'])
+    if message.sender:
+      node_name = self.nodes_by_sender()[message.sender]
+      partition = self.find_partition(node_name)
+      # if we're in a partition, only send to those also in the partition
+      if partition:
+        should_receive = should_receive.intersection(partition)
+        message['destination'] = list(should_receive)
+
+    should_drop, should_not_drop = self.message_conditions.check_drop_conditions(message)
+    should_receive = should_receive.intersection(should_not_drop)
+
     should_delay, delay_destinations, delayed_messages = self.message_conditions.check_delay_conditions(message)
     should_receive.difference_update(delay_destinations)
+
     self.message_conditions.check_after_conditions(message)
+
     original_value = message.get('value')
     if original_value:
       tamper_all, tamper_destinations = self.message_conditions.check_tamper_conditions(message)
 
     if not should_drop and not should_delay:
-      if message.sender:
-        node_name = self.nodes_by_sender()[message.sender]
-        partition = self.find_partition(node_name)
-        # if we're in a partition, only send to those also in the partition
-        if partition:
-          should_receive = partition.difference(should_receive)
-
       for dest in should_receive:
         if original_value and tamper_all or dest in tamper_destinations:
           message['value'] = random.randint(0,1000)
@@ -311,6 +318,9 @@ class Broker:
         message['destination'] = [dest]
         message.send(self.pub, dest)
 
+    # Note that delayed messages are subject to partitioning once they are
+    # sent, and will still cross partitions if they show up here after the
+    # partition has been created
     for msg in delayed_messages:
       for dest in msg['destination']:
         msg.send(self.pub, dest)
