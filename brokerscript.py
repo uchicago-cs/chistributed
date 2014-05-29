@@ -8,7 +8,7 @@ def plain(cmd):
     return c
   return plain_
 
-make_start, make_stop, make_get, make_set, make_drop, make_tamper = map(plain, "start stop get set drop tamper".split())
+make_start, make_stop, make_get, make_set, make_drop, make_delay, make_tamper = map(plain, "start stop get set drop delay tamper".split())
 
 _send = plain("send")
 def make_send(tokens):
@@ -40,8 +40,8 @@ _json = restOfLine("json")
 count = Word(nums)("count").setParseAction(lambda x: int(x[0]))
 # count = OneOrMore(nums)("count")
 
-start, stop, get, set, send, drop, tamper, after, to_, from_ = map(lambda x: Keyword(x),
-    "start stop get set send drop tamper after to from".split())
+start, stop, get, set, send, drop, delay, tamper, after, to_, from_, by_ = map(lambda x: Keyword(x),
+    "start stop get set send drop delay tamper after to from by".split())
 to_ = to_("to").setParseAction(lambda x: True)
 from_ = from_("from").setParseAction(lambda x: True)
 
@@ -53,10 +53,11 @@ setcmd = ((set + name + key + value) | (set + key + value)).setParseAction(make_
 getcmd = ((get + name + key) | (get + key)).setParseAction(make_get) + EOL
 sendcmd = (send + _json).setParseAction(make_send) + EOL
 dropcmd = ((drop + count + EOL) | (drop + count + Optional(to_ | from_) + name + EOL)).setParseAction(make_drop)
+delaycmd = ((delay + count + by_ + count("delay") + EOL) | (delay + count + Optional(to_ | from_) + name + by_ + count("delay") + EOL)).setParseAction(make_delay)
 tampercmd = ((tamper + count + EOL) | (tamper + count + Optional(to_ | from_) + name + EOL)).setParseAction(make_tamper)
 aftercmd = (after + count + LBRACE + EOL + cmds("commands") + RBRACE + EOL).setParseAction(make_after)
 
-cmds << Group(OneOrMore(startcmd | stopcmd | getcmd | setcmd | sendcmd | dropcmd | tampercmd | aftercmd)).setWhitespaceChars(" \t")
+cmds << Group(OneOrMore(startcmd | stopcmd | getcmd | setcmd | sendcmd | dropcmd | delaycmd | tampercmd | aftercmd)).setWhitespaceChars(" \t")
 
 
 cmds.verbose_stacktrace = True
@@ -64,7 +65,7 @@ cmds.ignore(comment)
 
 def parse(string=None, filename=None):
   if filename is not None:
-    return cmds.parseFile(filename, parseAll=False)[0].asList()
+    return cmds.parseFile(filename, parseAll=True)[0].asList()
   elif string is not None:
     return cmds.parseString(string)[0].asList()
   else:

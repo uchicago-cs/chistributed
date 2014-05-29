@@ -45,16 +45,37 @@ class MessageConditions:
   def __init__(self, broker):
     self.broker = broker
     self.drop_conditions = []
-    self.after_conditions = []
+    self.delay_conditions = []
     self.tamper_conditions = []
+    self.after_conditions = []
 
   def add_condition(self, command):
     if (command['command'] == 'drop'):
       self.drop_conditions.append(command)
     elif command['command'] == 'after':
       self.after_conditions.append(command)
+    elif command['command'] == 'delay':
+      command['messages'] = []
+      self.delay_conditions.append(command)
     elif command['command'] == 'tamper':
       self.tamper_conditions.append(command)
+
+  def check_conds(self, conds, message):
+    all_match = False
+    destinations = set()
+    for cond in conds:
+      if cond['count'] == 0:
+        conds.remove(cond)
+        continue
+      m = self.matches(cond, message)
+      (any_match, sender_match, destination_matches) = m
+      if any_match or sender_match:
+        tamper_all = True
+      destinations = destinations.union(destination_matches)
+      if any(m):
+        cond['count'] -= 1
+
+    return (all_match, destinations)
 
   def check_drop_conditions(self, message):
     '''
@@ -63,21 +84,18 @@ class MessageConditions:
     of nodes that should receive the message. Updates drop conditions
     accordingly.
     '''
-    should_drop = False
     should_receive = set(message['destination'])
-    for cond in self.drop_conditions:
-      if cond['count'] == 0:
-        self.drop_conditions.remove(cond)
-        continue
-      m = self.matches(cond, message)
-      (any_match, sender_match, destination_matches) = m
-      if any_match or sender_match:
-        should_drop = True
-      should_receive.difference_update(destination_matches)
-      if any(m):
-        cond['count'] -= 1
-
+    should_drop, should_not_receive = self.check_conds(self.drop_conditions, message)
+    should_receive.difference_update(should_not_receive)
     return (should_drop, should_receive)
+
+  def check_tamper_conditions(self, message):
+    '''
+    Returns (tamper_all, tamper_destinations) where tamper_all is True iff
+    every message should be tampered and tamper_destinations is a set of
+    destinations that should be tampered with.
+    '''
+    return self.check_conds(self.tamper_conditions, message)
 
   def check_after_conditions(self, message):
     '''
@@ -93,27 +111,48 @@ class MessageConditions:
       if cond['count'] == 0:
         self.broker.script = cond['commands'] + self.broker.script
 
-  def check_tamper_conditions(self, message):
+  def check_delay_conditions(self, message):
     '''
-    Returns (tamper_all, tamper_destinations) where tamper_all is true iff
-    every message should be tampered and tamper_destinations is a set of
-    destinations that should be tampered with.
+    Returns (delay_all, delay_destinations, messages) where delay_all is True
+    iff the message should be delayed for all destinations, and
+    delay_destinations is the set of destinations for which it should be
+    delayed, and messages is a list of messages which should be sent now.
+    Furthermore, adds the messages to the condition information so they can be
+    sent later, and returns messages which should be sent now.
     '''
-    tamper_all = False
-    tamper_destinations = set()
-    for cond in self.tamper_conditions:
-      if cond['count'] == 0:
-        self.tamper_conditions.remove(cond)
+    delay_all = False
+    destinations = set()
+    messages = []
+    for cond in self.delay_conditions:
+      if cond['count'] == 0 and len(cond['messages']) == 0:
+        self.delay_conditions.remove(cond)
+        continue
+      for msg in cond['messages']:
+        if msg['delayed'] == cond['delay']:
+          messages.append(msg['message'])
+          cond['messages'].remove(msg)
+        else:
+          msg['delayed'] += 1
+      if delay_all or cond['count'] == 0:
         continue
       m = self.matches(cond, message)
       (any_match, sender_match, destination_matches) = m
       if any_match or sender_match:
-        tamper_all = True
-      tamper_destinations = tamper_destinations.union(destination_matches)
+        delay_all = True
+        msg = {'message': message,
+               'delayed': 0}
+        cond['messages'].append(msg)
+      else:
+        destinations = destinations.union(destination_matches)
+        for dest in destination_matches:
+          msg = {'message': Message(message),
+                 'delayed': 0}
+          msg['message']['destination'] = [dest]
+          cond['messages'].append(msg)
       if any(m):
         cond['count'] -= 1
 
-    return (tamper_all, tamper_destinations)
+    return (delay_all, destinations, messages)
 
   def matches(self, cond, message):
     '''
@@ -244,11 +283,13 @@ class Broker:
     '''
     m = Message(message)
     should_drop, should_receive = self.message_conditions.check_drop_conditions(m)
+    should_delay, delay_destinations, delayed_messages = self.message_conditions.check_delay_conditions(m)
+    should_receive.difference_update(delay_destinations)
     self.message_conditions.check_after_conditions(m)
     original_value = m.get('value')
     if original_value:
       tamper_all, tamper_destinations = self.message_conditions.check_tamper_conditions(m)
-    if not should_drop:
+    if not should_drop and not should_delay:
       for dest in should_receive:
         if original_value and tamper_all or dest in tamper_destinations:
           m['value'] = random.randint(0,1000)
@@ -256,6 +297,10 @@ class Broker:
           m['value'] = original_value
         m['destination'] = [dest]
         m.send(self.pub, dest)
+
+    for msg in delayed_messages:
+      for dest in msg['destination']:
+        msg.send(self.pub, dest)
 
     return Message({'type': 'okay'})
 
@@ -378,6 +423,7 @@ class Broker:
         'set': self.send_set,
         'json': self.send_json,
         'drop': self.message_conditions.add_condition,
+        'delay': self.message_conditions.add_condition,
         'after': self.message_conditions.add_condition,
         'tamper': self.message_conditions.add_condition
       }
