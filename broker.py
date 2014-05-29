@@ -61,6 +61,11 @@ class MessageConditions:
       self.tamper_conditions.append(command)
 
   def check_conds(self, conds, message):
+    '''
+    Generic condition checker. Returns (all_match, destinations) where
+    all_match is True iff the message as a whole matches the condition, and
+    destinations is a set containing specific recipients for which it matches.
+    '''
     all_match = False
     destinations = set()
     for cond in conds:
