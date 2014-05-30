@@ -312,12 +312,14 @@ class Broker:
 
     if not should_drop and not should_delay:
       for dest in should_receive:
-        if original_value and tamper_all or dest in tamper_destinations:
-          message['value'] = random.randint(0,1000)
-        else:
-          message['value'] = original_value
-        message['destination'] = [dest]
-        message.send(self.pub, dest)
+        dest_partition = self.find_partition(dest)
+        if not dest_partition or dest_partition == partition:
+          if original_value and tamper_all or dest in tamper_destinations:
+            message['value'] = random.randint(0,1000)
+          else:
+            message['value'] = original_value
+          message['destination'] = [dest]
+          message.send(self.pub, dest)
 
     # Note that delayed messages are subject to partitioning once they are
     # sent, and will still cross partitions if they show up here after the
