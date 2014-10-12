@@ -1,0 +1,540 @@
+% need shell-escaping for minted
+
+%!TEX TS-program = xelatex --shell-escape
+%!TEX encoding = UTF-8 Unicode
+
+\documentclass[12pt]{article}
+
+\usepackage{graphicx}
+\usepackage{amssymb}
+
+\usepackage[letterpaper, margin=1.5in]{geometry}
+\usepackage[parfill]{parskip}
+
+\makeatletter
+\newlength{\fnBreite}
+\renewcommand{\@makefntext}[1]{%
+  \settowidth{\fnBreite}{\footnotesize\@thefnmark.i}
+  \protect\footnotesize\upshape%
+  \setlength{\@tempdima}{\columnwidth}\addtolength{\@tempdima}{-\fnBreite}%
+  \makebox[\fnBreite][l]{\@thefnmark.\phantom{}}%
+  \parbox[t]{\@tempdima}{\everypar{\hspace*{1em}}\hspace*{-1em}\upshape#1}}
+\makeatother
+
+\usepackage{fontspec,xltxtra,xunicode}
+\defaultfontfeatures{Mapping=tex-text}
+
+\usepackage[autostyle=true,english=american,french=guillemets]{csquotes}
+\MakeOuterQuote{"}
+
+\usepackage[usenames,svgnames]{xcolor}
+
+\usepackage[colorlinks=true,
+	allcolors=DarkBlue,
+	backref=section]{hyperref}
+
+\usepackage{cleveref}
+
+\usepackage[linecolor=orange,bordercolor=orange,backgroundcolor=white]{todonotes}
+
+\usepackage{tikz}
+\usetikzlibrary{
+	topaths,
+	positioning,
+	scopes,
+	shapes.multipart,
+	shapes.symbols
+}
+
+\usepackage{minted}
+\usemintedstyle{default}
+
+\definecolor{mintgreen}{HTML}{008000}
+
+% patch for minted due to http://tex.stackexchange.com/questions/83558/error-caused-by-interaction-between-minted-footnotes-babel-and-double-quote/83573#83573
+\makeatletter
+\renewcommand\mint{%
+  \begingroup
+  \let\do\@makeother\dospecials
+  \catcode`\{=1
+  \catcode`\}=2
+  \@ifnextchar[{\endgroup\mint@i}{\endgroup\mint@i[]}}
+\def\mint@i[#1]#2{%
+  \minted@resetoptions
+  \setkeys{minted@opt}{#1}%
+  \gdef\mint@lang{#2}%
+  \begingroup
+  \let\do\@makeother\dospecials
+  \mint@ii}
+\def\mint@ii#1{%
+  \endgroup
+  \def\mint@iii##1#1{%
+    \endgroup
+    \expandafter\edef\csname FV@SV@minted@verb\endcsname{\detokenize{##1}}%
+    \minted@savecode@inline{\FV@SV@minted@verb}%
+    \minted@pygmentize@inline{\mint@lang}%
+    \DeleteFile{\jobname.pyg}}%
+  \begingroup
+  \let\do\@makeother\dospecials  
+  \mint@iii}
+
+\newcommand\minted@savecode@inline[1]{%
+  \immediate\openout\minted@code\jobname.pyg
+  \immediate\write\minted@code{#1}%
+  \immediate\closeout\minted@code}
+
+\newcommand\minted@pygmentize@inline[2][\jobname.pyg]{%
+  \RecustomVerbatimEnvironment{Verbatim}{BVerbatim}{}%
+  \def\minted@cmd{pygmentize -l #2 -f latex -F tokenmerge
+    \minted@opt{gobble} \minted@opt{texcl} \minted@opt{mathescape}
+    \minted@opt{startinline} \minted@opt{funcnamehighlighting}
+    \minted@opt{linenos} -P "verboptions=\minted@opt{extra}"
+    -o \jobname.out.pyg #1}%
+  \immediate\write18{\minted@cmd}%
+  % For debugging, uncomment:
+  %\immediate\typeout{\minted@cmd}
+  \ifthenelse{\equal{\minted@opt@bgcolor}{}}%
+   {}%
+   {\begin{minted@colorbg}{\minted@opt@bgcolor}}%
+  \input{\jobname.out.pyg}%
+  \ifthenelse{\equal{\minted@opt@bgcolor}{}}%
+   {}%
+   {\end{minted@colorbg}}%
+  \DeleteFile{\jobname.out.pyg}}
+\makeatother
+
+\newcommand{\cmd}[1]{\tt \color{mintgreen} #1}
+\newcommand{\cmdDoc}[2]{
+\item[\cmd{#1}] \hfill \\ {#2}
+}
+
+\title{CMSC 23310 Final Project}
+\author{}
+\date{Due: Wednesday, June 11 @ 11:59pm\\(Graduating Students: Thursday, June 5 @ 11:59pm)}
+
+\newcommand{\chistributed}{$\chi$\textsf{stributed} }
+
+\newcommand{\points}[1]{{\sffamily\mdseries\guillemotleft #1 points\guillemotright{}}}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+\label{sec:intro}
+
+Distributed data storage is an important case study for many of the concepts explored in this course. The sharp rise of NoSQL databases in the late 2000's popularized data models, such as key-value stores, that departed from the traditional relational model. The development of these new models was usually motivated by the emerging field of large-scale distributed computing, and issues such as consistency and availability dominated the discussion of these models, with a bias towards sacrificing consistency for availability.
+
+Many of these design decisions and tradeoffs of these models frequently reference Brewer's CAP theorem but, as we discussed in class, distilling the CAP theorem into a ``choose 2 of 3'' rule of thumb can be misleading. In fact, several years after posing this theorem, Brewer \cite{brewer2012} restated the CAP theorem in contemporary terms with numerous clarifications. Among them, he stresses the original purpose of the CAP theorem and relates it to the BASE\footnote{Basically Available, Soft State, Eventually consistent. Proposed by Fox et al. \cite{fox1997}. Today, BASE is often summarized/simplified as "eventual consistency."} and ACID\footnote{Atomicity, Consistency, Isolation, Durability.} models. When designing a database, or any other distributed system, Brewer argues for looking at the full range of possible designs, and he puts ACID and BASE at opposite ends of the CAP spectrum: ACID is consistent, BASE is available. As an example of how to think about these tradeoffs, Brewer mentions that doing Paxos, ``just delays the decision. At some point the program must make the decision; retrying communication indefinitely is in essence choosing C over A.'' \cite{brewer2012}
+
+Many examples of these types of tradeoffs are explored throughout the course, from distributed hash tables like Chord and Tapestry, to Google's Bigtable and Spanner. For a detailed overview of NoSQL databases specifically, including some examples not studied in class, see \cite{strauch}.
+
+In this project, you will explore these tradeoffs by developing a simple distributed key-value store (which we will refer to simply as the ``data store''). You will develop your project on top of \chistributed, a simple architecture that will allow us to test your implementation under a number of failure conditions (fail-stop and byzantine failures, network partitions, etc.). This architecture imposes a few constraints, such as a specific protocol for communications both inside the data store and with the external world. However, the actual implementation and features of your project will be up to you. In other words, your implementation could internally use the OM(m) algorithm, Paxos, Raft, a DHT, etc.
+
+The project is divided into two parts: the implementation and a paper. The implementation can be done in any language, as long as we can compile it and run it on a CS machine. The implementation grade will be based on whether you meet a set of requirements (described later). Your paper will describe your data store's goals and requirements, the design decisions you made based on those requirements (including a justification of those decisions, based on relevant course readings or other literature) and a description of your implementation.
+
+\section{The \chistributed architecture}
+
+The \chistributed architecture is capable of running a number of processes concurrently, and simulates a distributed system by allowing those processes to communicate through a central message broker. So, instead of communicating directly with each other via sockets, processes communicate by sending messages to the message broker, which is responsible for getting the message to its destination. This provides a central point for testing all communications between nodes, as well as simulating failure conditions in the distributed system.
+
+In this project, you will implement a standalone program representing a node. Your program must accept a number of command-line parameters (specified in \cref{sec:startup}) and must be able to process messages in a simple JSON protocol (specified in \cref{sec:protocol}).
+
+To simulate a system with $N$ nodes, the broker will simply launch $N$ copies of your program. Of course, your system may require that some nodes in the system take on specific roles (e.g., Proposers vs. Acceptors in a Paxos implementation). Our architecture requires that you implement all those roles in the same program; you can then use command-line parameters (which you can configure the broker to use when launching your program) to make your program run in a specific role.
+
+The message broker is implemented using \href{http://zeromq.org/}{ZeroMQ/ØMQ}, a lightweight message queue with support for many topologies and bindings for many programming languages. Don't worry if you've never used ZeroMQ (or even message queues) before: the language bindings for ZeroMQ provide a simple and very high-level interface (well above the socket layer), and there are convenient functions to ``send message X to node named A'' and to ``wait for a message''.
+
+\subsection{ZeroMQ topology}
+
+The ZeroMQ topology is depicted in \cref{fig:broker_topology}. Every node in your system connects to the broker with two separate sockets.
+
+\begin{figure}
+\centering
+\begin{tikzpicture}[
+	tableNode/.style={rectangle, inner sep=0pt}]
+\node[cloud,cloud puffs=14,cloud puff arc=100,aspect=3.5,draw]
+	(client) {Virtual Client};
+
+\node[tableNode, below=of client] (broker)
+	{\begin{tabular}{|c|c|} \hline
+		\multicolumn{2}{|c|}{Broker} \\ \hline
+		{\tt ZMQ\_PUB} & {\tt ZMQ\_ROUTER} \\ \hline
+	\end{tabular}};
+
+\node[tableNode,below=of broker]
+	(node)
+	{\begin{tabular}{|c|c|} \hline
+		{\tt ZMQ\_SUB} & {\tt ZMQ\_REQ} \\ \hline
+		\multicolumn{2}{|c|}{Node} \\ \hline
+		\end{tabular}};
+
+\draw[-latex,dashed,draw,thick] (client) -- (broker);
+\draw[-latex,draw,thick] (broker.207) -- (broker.207|-node.north);
+\draw[latex-,draw,thick] (broker.330) -- (broker.330|-node.north);
+
+\end{tikzpicture}
+\caption{The ZMQ sockets composing your distributed system.}
+\label{fig:broker_topology}
+\end{figure}
+
+One, a {\tt ZMQ\_REQ} socket, connects to the broker's {\em router} socket.\footnote{The address of the broker's sockets are given by command line options; see \cref{sec:startup}.} All messages to the broker are sent to the router socket. Note that the ZeroMQ API guarantees that a message sent is actually received, unsegmented, by the peer for {\tt ZMQ\_REQ} sockets. However, it requires that a response be received before another message can be sent on that socket. As such, every message you send on the {\tt ZMQ\_REQ} socket will receive a response from the broker saying it was received.
+
+The second socket is a {\tt ZMQ\_SUB} socket, connected to a {\tt ZMQ\_PUB} on the broker. You cannot send any messages on this socket, but all communication from other nodes, or special messages from the router, will be received on this socket.
+
+Every node will be identified by a string (not by an IP address). So, in this topology, if a node {\tt Alice} wishes to send a message (as described in \cref{sec:protocol}, "messages" as understood by the \chistributed architecture are simple JSON objects) to a node {\tt Bob}, then {\tt Alice} will send the message to the central broker (naming {\tt Bob} as the destination) on the {\tt ZMQ\_REQ} socket. {\tt Bob} will then receive the message through its {\tt ZMQ\_SUB} socket.
+
+\subsubsection{Subscriptions}
+
+The {\tt ZMQ\_SUB} socket, which allows a node to receive messages from the broker, has some special considerations:
+
+\begin{itemize}
+\item The {\tt ZMQ\_SUBSCRIBE} option must be set on the {\tt ZMQ\_SUB} socket, giving its node name (as given on the command line; see \cref{sec:startup}). You cannot use the socket until you complete this ``subscription'' operation. Once this operation has been completed, you must send a {\tt hello} message to the broker (discussed in \cref{sec:protocol}). The broker will not attempt to send any messages addressed to the node until it sees this message. 
+
+\item Messages received on the {\tt ZMQ\_SUB} socket are ZeroMQ messages. These messages are composed of a sequence of {\em frames}, and the \chistributed JSON message will be contained in the third frame of this message. Furthermore, subscriptions are based on prefixes of messages. As such, the message received on the wire on the {\tt ZMQ\_SUB} socket will be three frames:  and the JSON message, as depicted in . You can disregard the first two frames, which contain the node name, an empty delimiter (see \cref{fig:messageframes}). The provided examples and documentation make it clear how to deal with frames.
+\end{itemize}
+
+\begin{figure}
+\centering
+\begin{tabular}{|c|c|c|}
+\hline
+\multicolumn{3}{|c|}{Message} \\ \hline
+Frame 1 & Frame 2 & Frame 3 \\ \hline
+\tt node-name-string & \tt "" & \tt json-string \\ \hline
+\end{tabular}
+\caption{Format of ZMQ messages received on the {\tt ZMQ\_SUB} socket.}
+\label{fig:messageframes}
+\end{figure}
+
+\subsubsection{Virtual client}
+
+Conceptually, there are also ``clients'' that send {\tt get} and {\tt set} requests to the data store. These requests can be directed to any node in your system, but are also routed through the message broker. However, there are no actual client processes; instead, the broker will simulate the generation of these {\tt get} and {\tt set} requests from clients.
+
+\subsection{Message Protocol}
+\label{sec:protocol}
+
+A single message is encoded as a \href{http://zeromq.org/}{JSON} object. For example:
+
+\begin{minted}{json}
+          {"type": "set", 
+           "destination": ["proposer2"], 
+           "id": 987568098927, 
+           "key": "x", 
+           "value": "42"}
+\end{minted}
+
+All messages have two fields in common: {\tt type} and {\tt destination}. We define five message types, but you are free to use additional message types with arbitrary fields. Given such a message (i.e.,~a message whose type is not listed below), the broker will simply deliver it to the node/s specified in the  {\tt destination} field, which must be a JSON array with one or more node names; we describe node names below in \cref{sec:startup}.
+
+There are two message types that are generated \emph{only} by the broker:
+
+\begin{description}
+\item[{\tt get} --] Represents a request by a client to get the current value of a given key. See \cref{tab:get_cmd}.
+\item[{\tt set} --] Represents a request by a client to set the value for a given key. See \cref{tab:set_cmd}.
+\end{description}
+
+As we describe later, these messages will be directed to a specific node in your data store. However, you will be able to specify what nodes will receive the {\tt get}/{\tt set} messages (e.g.,~in a Paxos implementation, it only makes sense for {\tt set} messages to be sent to a Proposer node).
+
+There are four message types that the broker expects from the nodes:
+
+\begin{description}
+\item[{\tt getResponse} --] The broker expects to see one {\tt getResponse} for each {\tt get}, from the same node and with the same {\tt id}. See \cref{tab:get_cmd}.
+\item[{\tt setResponse} --] Expected for each {\tt set}. See \cref{tab:set_cmd}.
+\item[{\tt hello} --] Expected exactly once as soon as a node starts. Must have the node's name (as given to it on the command line) in the {\tt source} field. No messages will be sent to the node until the broker receives this message.
+\item[{\tt log} --] This convenience message type allows nodes to log debug information, so it can be centralized in the broker. The additional fields are up to you; the whole message, with any extra fields you include in the message, will be logged by the broker, along with the source node name and timestamp.
+\end{description}
+
+When implementing your message handling code, as well as when defining your own messages, take into account the following:
+
+\begin{itemize}
+\item The "client-facing" message types ({\tt get}, {\tt getResponse}, etc.) require an {\tt id} field which \emph{must} be preserved across the request. The actual value of the  {\tt id} field is set by the broker (in the {\tt get}/{\tt set} message), and the corresponding {\tt Response} message must use that same value. However, you are not required to use that same value for any internal messages you define. 
+
+\item Whenever you send a message from one node to another to communicate a value, you must use a field called \texttt{value}. When simulating Byzantine failures, this is the field that the broker will tamper with in your messages.
+
+\item Although not strictly required, you will probably want to include a {\tt source} field in your messages.
+
+\item Take into account that you can add any arbitrary fields to the five message types we define; the fields we specify are simply the ones the broker will be paying attention to. 
+
+\item The exact semantics of the "client-facing" get and set commands is up to you, in no insignificant way. The presumed client intent for getting a key is to see the most up-to-date value associated with the key across the network. However, the design of your system might mean that the user won't always see the most up-to-date value, or may not get a value at all (in the form of an error message), if the node is cut off from the network etc.
+\end{itemize}
+
+
+
+\begin{table}
+\centering
+\begin{tabular}{r | l}
+		& {\sc Get} \\ \hline
+Request	& \mint{js}|{"type": "get", "id": id, "key": key}| \\
+Success	& \mint{js}/{"type": "getResponse", "id": id, "value": value}/ \\
+Error	& \mint{js}/{"type": "getResponse", "id": id, "error": message}/
+\end{tabular}
+\caption{The {\tt get} message, with expected success and error replies.}
+\label{tab:get_cmd}
+\end{table}
+
+\begin{table}
+\centering
+\begin{tabular}{r | l}
+		& {\sc Set} \\ \hline
+Request & \mint{js}/{"type": "set", "id": id, "key": key, "value": value}/ \\
+Success & \mint{js}/{"type": "setResponse", "id": id, "value": value}/ \\
+Error	& \mint{js}/{"type": "setResponse", "id": id, "error": message}/
+\end{tabular}
+\caption{The {\tt set} message, with expected success and error replies.}
+\label{tab:set_cmd}
+\end{table}
+
+
+\subsection{Running the \chistributed broker}
+\label{sec:startup}
+
+The \chistributed broker doesn't just handle the delivery of messages; it is also responsible for starting and stopping nodes. The list of nodes to launch (as well as other actions, such as simulated failures, etc.) is specified in the \emph{\chistributed script}, a text file with the following commands:
+
+\begin{description}
+\cmdDoc{start <{\em name}> [{\em params...}]}{
+	Forks one process, assigning $name$ to the node. When launching your program, the broker will always supply the following parameters:
+
+\begin{description}
+\cmdDoc{--node-name \em <name>}{
+	The node's name which can be used to identify it to the broker or another node.
+}
+\cmdDoc{--pub-endpoint \em <endpoint>}{
+	The endpoint for the broker's {\tt ZMQ\_PUB} socket, with protocol, IP address, and port, which should be suitable to pass directly to ZeroMQ API or wrapper calls. {\em Ex.} {\tt tcp://127.0.0.1:23311}
+}
+\cmdDoc{--router-endpoint \em <endpoint>}{
+	The endpoint for the broker's {\tt ZMQ\_ROUTER} socket, in same format as {\tt --pub-endpoint}.
+}
+\cmdDoc{--peer-names \em names...}{
+	A comma-separated list of all other node names.
+}
+\end{description}
+	
+	You can specify additional parameters to your program using the $params$ parameter.
+	
+}
+\cmdDoc{stop <{\em name}>}{
+	Stops the process corresponding to the given node $name$.
+}
+\item[\cmd{get [{\em name}] \em key}]
+\cmdDoc{set [{\em name}] \em key value}{
+	Sends a {\tt get} or {\tt set} message to the node specified by $name$, or a random node if $name$ is not given.
+}
+\cmdDoc{send \em json}{
+	Inputs the message $json$ as-is into the broker's stream of messages. This can be used to send "fake" messages to some nodes.
+}
+\end{description}
+
+For example, a script running a Byzantine generals simulation might look like the following:
+
+\begin{minted}{text}
+    start commander --commander
+    start lieutenant1 --lieutenant
+    start lieutenant2 --lieutenant
+    start lieutenant3 --lieutenant
+    start lieutenant4 --lieutenant
+    set commander 1 42
+    get commander 1
+\end{minted}
+
+If this script were in a file {\tt simulation1.chi}, you would run the broker like so:
+
+\mint{sh}/    $ broker -e simulation1.chi/
+
+These basic commands are executed in sequence. In the example above, the {\tt get} command will not be executed until the broker receives a reply to the {\tt set} command from the {\tt commander} node.
+
+\subsection{Emulating unreliability \& failures}
+\label{sec:simulation}
+
+Besides the {\tt stop} and {\tt send} commands, the broker provides some more sophisticated ways to control the system and emulate various modes of failure or unreliability. Most conditions are based on the number of messages sent across the system. For example, the {\tt drop} command will drop a certain number of messages.
+
+\begin{description}
+\cmdDoc{after <{\em count}> [[ to | from ] {\em node}] \{ ... \}}{
+	Once $count$ messages have been sent or received (optionally only by $node$), perform the commands in the braces.
+}
+\cmdDoc{drop <{\em count}> [[ to | from ] {\em node}]}{
+	Causes the next $count$ messages to be dropped. As with {\tt after} and {\tt delay}, this may be specified to one or both directions of a given node.
+}
+\cmdDoc{delay <{\em count}> [[ to | from ] {\em node}] by <{\em delay}>}{
+	Causes the next $count$ non-control messages (i.e. messages being sent from one node to another) to be held until $delay$ other messages have been transferred. As with {\tt after} and {\tt drop}, may be specified to one node in either direction.
+}
+\cmdDoc{tamper <{\em count}> [[ to | from ] {\em node}]}{
+	Causes the next $count$ non-control messages with a {\tt value} field to have that value randomly replaced. Can be used to ham-fistedly emulate Byzantine disloyalty if you choose not to implement it yourself. Will always put an integer in the {\tt value} field.
+}
+\cmdDoc{split <{\em partition}> <{\em nodes}...>}{
+	Emulates a partition between those nodes listed (comma separated) in $nodes$ and all other nodes. This means all messages from a listed node to any node not listed will be dropped. The argument $partition$ is the partition's name, used in {\tt join}.
+}
+\cmdDoc{join <{\em partition}>}{
+	Stop emulating the partition named by $partition$. Note that although {\tt split} doesn't have a $count$ field, you can produce the same effect with {\tt after}.
+}
+\cmdDoc{go crazy <{\em count}> [{\em seed}]}{
+	Causes messages to be randomly dropped and delayed until the end of the simulation or until $count$ messages have been transferred (whichever happens first). Here, "transferred" includes attempts at messages sending, not just those messages that the "crazy" mode lets through. To unconditionally go crazy until the end of the simulation, set $count$ to 0. Optionally, specify a seed to be used by the random failure generator (to have predictably crazy behavior).
+}
+\end{description}
+
+While the basic commands in \cref{sec:startup} are executed in sequence, these commands generally affect the state of the broker or set up listeners. For example, the {\tt after} command sets up a listener for the condition that a certain number of messages have been sent: commands following the {\tt after} command will be executed in serial after the listener is set up. However, the listener won't be set up until serial commands preceding the {\tt after} command, such as a {\tt set} command, have been executed and---in the case of {\tt set}, not until after they have gotten a reply, which could mean any number of messages have already been sent. Thus, the listeners start counting messages only once they've been set up.
+
+\section{Project requirements}
+
+Your project is divided into two parts: the project implementation and the final paper.
+
+The implementation is divided into the following components:
+
+\begin{itemize}
+\item \points{30} Implementing \texttt{get} and \texttt{set}: Your implementation must be able to process \texttt{get} and \texttt{set} messages from the broker. For this part of the project, you do not have to replicate the data to other nodes (besides the one receiving the \texttt{get} or \texttt{set} message) or even be fault-tolerant.
+\item \points{20} Basic replication: Your implementation must create replicas of the values (but not necessarily in a fault-tolerant manner).
+\item \points{40} Fault tolerance: Given a call to \texttt{set} or \texttt{get}, the call must eventually succeed or return an error message. Either call can be delayed in the presence of failures but, in the absence of failures, all calls must eventually succeed. The consistency model is up to you, but the returned values should never be grossly inconsistent. These conditions should be met in the presence of\ldots
+
+\begin{itemize}
+\item Byzantine or fail-stop failures \points{25}
+\item Network partitions \points{15}
+\end{itemize}
+
+\item \points{10} Crazy fault tolerance: Your implementation must be fault-tolerant (as defined above) under arbitrary uses of the \texttt{go crazy} command.
+\end{itemize}
+
+Take into account that, as described later, we will not be testing your code with arbitrary scripts (except in the ``Crazy fault tolerance'' case). Instead, you must supply \chistributed scripts that demonstrate that your implementation fulfils the above requirements.
+
+The paper is divided into the following components:
+
+\begin{itemize}
+\item \points{20} Summary of fault-tolerance algorithm/protocol used in your project, citing all sources you consulted.
+
+\item \points{35} Description of your implementation. This must include, at least, a description of how \texttt{set} requests are processed, how \texttt{get} requests are processed, and the the specific fault tolerance features supported by your project.
+
+\item \points{30} Discussion of at least two example scripts (with failures) and an explanation of how your implementation reacts in the presence of those failures.
+
+\item \points{15} Discussion of the issues, challenges, and lessons learned while implementing your data store.
+\end{itemize}
+
+There is no minimum length requirement, but we suggest you aim for at least 8 single-spaced pages.
+
+
+\section{Project ideas}
+\label{sec:ideas}
+
+In this project, you are free to implement your data store in any way you want, as long as it meets the requirements outlined above. However, unless there is a fault tolerant distributed algorithm you've really really really been dying to try out, we encourage you to choose from one of the following three project ideas.
+
+\subsection{Multi-Paxos}
+
+In Homework \#2, you implemented a basic version of Paxos where you always ran a single ``instance'' of Paxos at a time, without the possibility of having multiple instances running concurrently. You can build on this and write a data store that uses Multi-Paxos at its heart, similar to the Chubby service. If you choose this option, your project should do more than simply run a full instance of Paxos for each \texttt{get} and \texttt{set} operation; you should, at the very least, incorporate the notion of a distinguished proposer such that, as long as the proposer does not fail, the first phase of the algorithm does not have to be re-run for every instance.
+
+\subsection{DHT}
+
+One basic principle of DHTs like Chord is that only some nodes may be responsible for a specific key. For example, as described in the Chord paper\cite{chord}:
+
+\begin{quotation}
+The {\em Chord protocol} supports just one operation: given a key,
+it maps the key onto a node. Depending on the application using
+Chord, that node might be responsible for storing a value associated
+with the key. Chord uses a variant of consistent hashing to
+assign keys to Chord nodes.
+\end{quotation}
+
+With a protocol such as this, availability depends on the key under consideration: if you are getting a key which is only available on a faulty node, you may not get a (correct) value. Furthermore, two nodes responsible for the same key could easily have different values. DHTs tend to prioritize availability over consistency.
+
+Nonetheless, the algorithms that implement these tradeoffs are not set in stone. Optimizations or tradeoffs are possible with the same basic approach common to DHTs which may gain more consistency.
+
+An important concept in DHTs is the {\em overlay network}. It is not the case that every node will communicate directly with every other node regularly. Instead, a routing algorithm will query different nodes in succession until it finds a node responsible for the key it is seeking. The choice of algorithm here informs the topology of the overlay network, which is visible in the choice of which nodes are {\em neighbors}. Pastry and Chord both use different search algorithms, and thus have different overlay network topologies.
+
+As a simplistic example, if you are using linear search for your routing algorithm, then your network topology might be a ring. In that case, every node would have only two neighbors: one with a higher key responsibility, and one with a lower. If a node responsible for key range $n$ has neighbors responsible for $n-1$ and $n+1$, and it wishes to set a value for a key in $n+2$, it might ask the the node responsible for $n+1$, "Who is responsible for $n+2$?"
+
+You can start to see how these algorithms play into the CAP theorem. This simple example does not make much effort to preserve either consistency or availability. Since we have a ring topology, and each node only knows of two other nodes, one or two nodes failing could render half the keyspace unavailable. Then, there are other choices to make: how do nodes change keys range responsibility when nodes join or leave the network? In that hypothetical partition, each half of the network could end up with different values for the same key, and if they are "rejoined," how is that reconciled?
+
+If you implement a DHT for this project, you will have to answer many questions like these. With the Paxos projec ideas, failures and partitions amongst a relatively small number of nodes are most likely to be your concern. With DHTs, the "P" in CAP is usually associated with the fact that nodes frequently join or disconnect from the network.
+
+\subsection{Scatter: DHTs and Paxos}
+
+In addition to implementing your own DHT design, there is one particular extension of DHTs very pertinent to this course which you may consider.
+
+Scatter \cite{scatter} is a DHT which tries to be more consistent than a simpler DHT, while maintaining high availability. As usual, this is a tradeoff: it is neither perfectly consistent nor perfectly available, as nodes come and go in the network. The basic idea is that when partitioning the keyspace amongst the nodes, the nodes are put into discrete {\em groups}. Updates to keys must be agreed upon via Paxos within the responsible group. This drastically improves consistency, since any nodes responsible for a given key will have the same value (subject to the assumptions and constraints of Paxos).
+
+Scatter also extends Paxos to deal cleanly with adding and removing nodes over time, further improving availability. You can think of it as keeping the information about which nodes are in a given group under the same consistency restraints as keys in that group: to add a node to a group, the group runs Paxos. Scatter exploits this to avoid routing inconsistencies, where a node may think it is responsible for a given key range, when changes to the network topology have made it responsible for another.
+
+Both of these (key range consistency and routing consistency) are separate optimizations. Either would be an approachable extension of a DHT system such as Chord or Pastry, and would be very appropriate for this project.
+
+Note that if you choose to implement a more-or-less "vanilla" DHT, you should focus on the fundamental design choices of a DHT: keyspace partitioning method, routing algorithm, etc. If you choose to do a DHT+Paxos project, as described here, the choice of those fundamentals will be less important than how you integrate Paxos with them.
+
+
+
+\section{Submission instructions}
+
+You can do this project in groups of up to three students (this includes both the implementation and the paper). You are also allowed to implement your homework in any programming language you want. However, your code must compile and run correctly on the CS Linux machines (take into account that, because we are using ZeroMQ, you are effectively limited to languages with ZeroMQ binding which, fortunately, includes most modern languages). 
+
+Your code and paper must be submitted in a tarball called \texttt{\emph{cnetid}.tgz}, \texttt{\emph{cnetid1}\_\emph{cnetid2}.tgz}, or \texttt{\emph{cnetid1}\_\emph{cnetid2}\_\emph{cnetid3}.tgz}. The tarball must contain three directories:
+
+\begin{itemize}
+ \item \texttt{impl}: This directory must include all your source code. If you used a compiled language, you \emph{must} include a Makefile to compile your code.
+ \item \texttt{scripts}: \chistributed scripts that show your implementation meets the project requirements.
+ \item \texttt{paper}: Must contain a single PDF file, \texttt{project.pdf}, with your final paper.
+\end{itemize}
+
+The tarball must also include a \texttt{README.txt} file with the following information:
+
+\begin{itemize}
+ \item Names and e-mail addresses of all the students in the group
+ \item For groups of two or three, a description of what each student worked on.
+ \item Any additional instructions on how to compile or use the code.
+\end{itemize}
+
+
+\clearpage
+\begin{thebibliography}{9}
+
+\bibitem{brewer2012}
+	E. Brewer
+	\href{http://ieeexplore.ieee.org.proxy.uchicago.edu/ielx5/2/6155638/06133253.pdf}
+	{"CAP twelve years later: How the "rules" have changed,"}
+	{\em Computer}, vol.45, no.2, pp.23,29,
+	Feb. 2012. \\
+
+\bibitem{fox1997}
+	A. Fox et al.,
+	\href{http://www.cs.berkeley.edu/~brewer/cs262b/TACC.pdf}
+	{“Cluster-Based Scalable Network Services,”}
+	{\em Proc. 16th ACM Symp. Operating Systems Principles} 
+	(SOSP 97),
+	ACM,
+	pp. 78-91,
+	1997. \\
+
+\bibitem{strauch}
+	C. Strauch,
+	\href{http://www.christof-strauch.de/nosqldbs.pdf}
+	{\em NoSQL Databases},
+	2011. \\
+
+\bibitem{chord}
+	I. Stoica et al.,
+	\href{http://pdos.csail.mit.edu/papers/chord:sigcomm01/chord_sigcomm.pdf}
+	{"Chord: A Scalable Peer-to-peer Lookup Service for Internet Applications,"} 
+	{\em SIGCOMM Comput. Commun. Rev.},
+	ACM, 31(4):149–160,
+	Aug. 2001. \\
+
+\bibitem{pastry}
+	A. Rowstron et al.,
+	\href{http://www.cs.unibo.it/~babaoglu/courses/cas12-13/resources/tutorials/pastry.pdf}
+	{"Pastry: Scalable, decentralized object location, and routing for large-scale peer-to-peer systems,"}
+	{\em Proc. IFIP/ACM International Conference on Distributed Systems Platforms}
+	(Middleware 2001),
+	pp. 329–350,
+	2001. \\
+
+\bibitem{chubby}
+	M. Burrows,
+	\href{http://static.googleusercontent.com/media/research.google.com/en/us/archive/chubby-osdi06.pdf}
+	{"The Chubby lock service for loosely-coupled distributed systems,"}
+	{\em Proc. 7th Symp. Operating Systems Design and Implementation,}
+	(OSDI 2006),
+	USENIX Association,
+	pp. 335–350, Nov. 2006. \\
+
+
+\bibitem{scatter}
+	L. Glendenning et al.,
+	\href{http://homes.cs.washington.edu/~arvind/papers/scatter.pdf}
+	{"Scalable Consistency in Scatter,"}
+	{\em Proc. 23rd ACM Symp. Operating System Principles},
+	(SOSP 2011), ACM,
+	Oct. 2011. \\
+
+\end{thebibliography}
+
+\end{document}  
