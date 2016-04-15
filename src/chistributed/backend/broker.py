@@ -222,6 +222,10 @@ class MessageBroker:
         '''
         self.log('Starting broker')
         self.loop.start()
+        
+    def stop(self):
+        self.log('Stopping broker')
+        self.loop.stop()        
 
     def receive_message(self, msg_frames):
         '''

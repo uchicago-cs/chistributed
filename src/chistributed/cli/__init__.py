@@ -35,6 +35,8 @@ import chistributed.common.log as log
 from chistributed.common import CHISTRIBUTED_FAIL, CHISTRIBUTED_SUCCESS
 from chistributed.common.config import Config
 from chistributed.backend.broker import MessageBroker
+from chistributed.cli.interpreter import Interpreter
+import threading
 
 @click.command(name="chistributed")
 @click.option('--config', '-c', type=str, multiple=True)
@@ -59,11 +61,25 @@ def chistributed_cmd(config_file, config, verbose, debug):
             config_overrides[k] = v
 
     config_obj = Config.get_config(config_file, config_overrides)
-    
-    
-    
-    broker = MessageBroker('tcp://127.0.0.1:23310', 'tcp://127.0.0.1:23311')
 
-    broker.start()
+    broker = MessageBroker('tcp://127.0.0.1:23310', 'tcp://127.0.0.1:23311')
+    
+    # Run broker in separate thread
+    def broker_thread():
+        broker.start()
+        print "Thread exit"
+
+    t = threading.Thread(target=broker_thread)
+    t.daemon = True
+    t.start()    
+    
+    print("FOO")
+    interpreter = Interpreter()
+    
+    interpreter.cmdloop()
+    
+    broker.stop()
+    
+    t.join()
 
     return CHISTRIBUTED_SUCCESS
