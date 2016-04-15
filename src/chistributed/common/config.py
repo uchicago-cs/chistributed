@@ -1,4 +1,3 @@
-
 #  Copyright (c) 2016, The University of Chicago
 #  All rights reserved.
 #
@@ -28,24 +27,49 @@
 #  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 #  POSSIBILITY OF SUCH DAMAGE.
 
-import traceback
+import os.path
+import yaml
+from chistributed.common import ChistributedException
 
-CHISTRIBUTED_SUCCESS = 0
-CHISTRIBUTED_FAIL = 1
 
-class ChistributedException(Exception):
-    def __init__(self, message, original_exception = None):
-        Exception.__init__(self, message)
-        self.original_exception = original_exception
-        if original_exception is not None:
-            self.traceback = traceback.format_exc()
-        else:
-            self.traceback = None
+class Config(object):
 
-    def print_exception(self):
-        print self.traceback
+    DEFAULT_CONFIG_FILENAME = "chistributed.conf"
+    
+    OPTION_NODE_EXECUTABLE = "node-executable"
+    OPTION_NODES = "nodes"
+    
+    VALID_OPTIONS = [OPTION_NODE_EXECUTABLE, OPTION_NODES]
+
+    @staticmethod
+    def get_config_file_values(config_file):
+        if not os.path.exists(config_file):
+            return {}
         
-def handle_unexpected_exception():
-    print "ERROR: Unexpected exception"
-    print traceback.format_exc()
-    exit(CHISTRIBUTED_FAIL)
+        with open(config_file, 'r') as f:
+            config_file_values = yaml.safe_load(f)
+    
+        if type(config_file_values) != dict:
+            raise ChistributedException("{} is not valid YAML".format(f))
+        
+        return config_file_values
+
+    @classmethod
+    def get_config(cls, config_file = None, config_overrides = {}):
+        config = {}
+       
+        if config_file is None:
+            config_file = Config.DEFAULT_CONFIG_FILENAME
+                
+        config_values = cls.get_config_file_values(config_file)
+        config.update(config_values)
+        config.update(config_overrides)
+                
+        # TODO: Check for configuration values
+        
+        return cls(config)
+
+    def __init__(self, config_values):        
+        self.config_values = {opt:config_values.get(opt) for opt in Config.VALID_OPTIONS}
+        
+        

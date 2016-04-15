@@ -33,28 +33,20 @@ import click
 from chistributed import RELEASE
 import chistributed.common.log as log
 from chistributed.common import CHISTRIBUTED_FAIL, CHISTRIBUTED_SUCCESS
+from chistributed.common.config import Config
+from chistributed.backend.broker import MessageBroker
 
-
+@click.command(name="chistributed")
 @click.option('--config', '-c', type=str, multiple=True)
-@click.option('--config-dir', type=str, default=None)
-@click.option('--work-dir', type=str, default=None)
+@click.option('--config-file', type=click.File('r'))
 @click.option('--verbose', '-v', is_flag=True)
 @click.option('--debug', is_flag=True)
 @click.version_option(version=RELEASE)
-@click.pass_context
-def chisubmit_cmd(ctx, config, config_dir, work_dir, verbose, debug):
+def chistributed_cmd(config_file, config, verbose, debug):
     global VERBOSE, DEBUG
     
     VERBOSE = verbose
     DEBUG = debug
-    
-    if config_dir is None and work_dir is not None:
-        print "You cannot specify --work-dir without --config-dir"
-        ctx.exit(CHISTRIBUTED_FAIL)
-
-    if config_dir is not None and work_dir is None:
-        print "You cannot specify --config-dir without --work-dir"
-        ctx.exit(CHISTRIBUTED_FAIL)
     
     log.init_logging(verbose, debug)
 
@@ -66,12 +58,12 @@ def chisubmit_cmd(ctx, config, config_dir, work_dir, verbose, debug):
             k, v = c.split("=")
             config_overrides[k] = v
 
-    ctx.obj = {}
+    config_obj = Config.get_config(config_file, config_overrides)
+    
+    
+    
+    broker = MessageBroker('tcp://127.0.0.1:23310', 'tcp://127.0.0.1:23311')
 
-    ctx.obj["config_overrides"] = config_overrides
-    ctx.obj["config_dir"] = config_dir
-    ctx.obj["work_dir"] = work_dir
-    ctx.obj["verbose"] = verbose
-    ctx.obj["debug"] = debug
+    broker.start()
 
     return CHISTRIBUTED_SUCCESS

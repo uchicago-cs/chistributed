@@ -181,8 +181,8 @@ class MessageConditions:
             destination_matches.add(cond['name'])
         return (any_match, sender_match, destination_matches)
 
-class Broker:
-    def __init__(self, node_executable, pub_endpoint, router_endpoint, script_filename=None):
+class MessageBroker:
+    def __init__(self, pub_endpoint, router_endpoint):
         self.loop = ioloop.ZMQIOLoop.instance()
         self.context = zmq.Context()
 
@@ -212,20 +212,8 @@ class Broker:
                 format='%(asctime)s [%(name)s] %(levelname)s: %(message)s')
         self.logger = logging.getLogger('broker')
 
-        self.node_executable = node_executable
-
         self.message_conditions = MessageConditions(self)
         self.partitions = {}
-
-        # Load script if it exists
-        self.script = None
-        if script_filename is not None:
-            try:
-                self.script = chistributed.script.parse(filename=script_filename)
-            except IOError as e:
-                self.log("Could not find script at specified location: " + str(e))
-            except chistributed.script.ParseException as e:
-                self.log("Could not parse script: " + str(e))
 
     def start(self):
         '''
@@ -233,9 +221,6 @@ class Broker:
         asynchronously on the pub and router ZMQStreams.
         '''
         self.log('Starting broker')
-        if self.script is not None:
-            self.log('Running script')
-            self.run_script()
         self.loop.start()
 
     def receive_message(self, msg_frames):
@@ -614,28 +599,4 @@ class Broker:
         del self.partitions[command['name']]
         pass
 
-if __name__ == '__main__':
-    import argparse
-    parser = argparse.ArgumentParser()
-    # more arguments than this will be necessary
-    parser.add_argument('--node-executable', '-e',
-            help='Set the name of the executable for nodes.',
-            dest='node_executable', type=str,
-            default='python examples/node.py')
-    parser.add_argument('--pub-endpoint', '-p',
-            help='Set the endpoint for the PUB socket.',
-            dest='pub_endpoint', type=str,
-            default='tcp://127.0.0.1:23310')
-    parser.add_argument('--router-endpoint', '-r',
-            help='Set the endpoint for the ROUTER socket.',
-            dest='router_endpoint', type=str,
-            default='tcp://127.0.0.1:23311')
-    parser.add_argument('--script', '-s',
-            help='Execute the given file as a broker script.',
-            dest='script_filename', type=str,
-            default=None)
-    args = parser.parse_args()
-    Broker(args.node_executable,
-                 args.pub_endpoint,
-                 args.router_endpoint,
-                 args.script_filename).start()
+
