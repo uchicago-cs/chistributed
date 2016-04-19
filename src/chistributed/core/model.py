@@ -26,56 +26,43 @@
 #  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 #  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 #  POSSIBILITY OF SUCH DAMAGE.
-
-import os.path
-import yaml
 from chistributed.common import ChistributedException
 
+class Message(object):
+    pass
 
-class Config(object):
 
-    DEFAULT_CONFIG_FILENAME = "chistributed.conf"
+class Node(object):
+    STATE_INIT = 0
+    STATE_STARTING = 1
+    STATE_RUNNING = 2
+    STATE_STOPPED = 3
     
-    OPTION_NODE_EXECUTABLE = "node-executable"
-    OPTION_NODES = "nodes"
-    
-    VALID_OPTIONS = [OPTION_NODE_EXECUTABLE, OPTION_NODES]
+    def __init__(self, node_id):
+        self.node_id = node_id
+        self.state = Node.STATE_INIT
 
-    @staticmethod
-    def get_config_file_values(config_file):
-        if not os.path.exists(config_file):
-            return {}
-        
-        with open(config_file, 'r') as f:
-            config_file_values = yaml.safe_load(f)
-    
-        if type(config_file_values) != dict:
-            raise ChistributedException("{} is not valid YAML".format(f))
-        
-        return config_file_values
 
-    @classmethod
-    def get_config(cls, config_file = None, config_overrides = {}):
-        config = {}
-       
-        if config_file is None:
-            config_file = Config.DEFAULT_CONFIG_FILENAME
-                
-        config_values = cls.get_config_file_values(config_file)
-        config.update(config_values)
-        config.update(config_overrides)
-                
-        # TODO: Check for configuration values
-        
-        return cls(config)
+class Network(object):
+    pass
 
-    def __init__(self, config_values):        
-        self.config_values = {opt:config_values.get(opt) for opt in Config.VALID_OPTIONS}
-        
-    def get_node_executable(self):
-        return self.config_values[Config.OPTION_NODE_EXECUTABLE]
+class DistributedSystem(object):
     
-    def get_nodes(self):
-        nodes = self.config_values[Config.OPTION_NODES]
-        return nodes.split()
+    def __init__(self, backend, nodes):
+        self.backend = backend
+        
+        self.nodes = {n: Node(n) for n in nodes}
+        
+        self.network = Network()
+        
+    def start_node(self, node_id):
+        if not node_id in self.nodes:
+            raise ChistributedException("No such node: {}".format(node_id))
+        
+        self.backend.start_node(node_id)
+        
+        self.nodes[node_id].state = Node.STATE_STARTING
+        
+        
+        
         

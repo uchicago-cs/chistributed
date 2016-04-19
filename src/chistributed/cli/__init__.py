@@ -34,9 +34,10 @@ from chistributed import RELEASE
 import chistributed.common.log as log
 from chistributed.common import CHISTRIBUTED_FAIL, CHISTRIBUTED_SUCCESS
 from chistributed.common.config import Config
-from chistributed.backend.broker import MessageBroker
+from chistributed.backends.zmq import ZMQBackend
 from chistributed.cli.interpreter import Interpreter
 import threading
+from chistributed.core.model import DistributedSystem
 
 @click.command(name="chistributed")
 @click.option('--config', '-c', type=str, multiple=True)
@@ -62,23 +63,26 @@ def chistributed_cmd(config_file, config, verbose, debug):
 
     config_obj = Config.get_config(config_file, config_overrides)
 
-    broker = MessageBroker('tcp://127.0.0.1:23310', 'tcp://127.0.0.1:23311')
+    backend = ZMQBackend(config_obj.get_node_executable(), 'tcp://127.0.0.1:23310', 'tcp://127.0.0.1:23311')
     
     # Run broker in separate thread
-    def broker_thread():
-        broker.start()
-        print "Thread exit"
+    def backend_thread():
+        backend.start()
+        print "Backend thread exiting"
 
-    t = threading.Thread(target=broker_thread)
+    t = threading.Thread(target=backend_thread)
     t.daemon = True
     t.start()    
     
-    print("FOO")
+    ds = DistributedSystem(backend, config_obj.get_nodes())
+
+    ds.start_node("node-1")
+    
     interpreter = Interpreter()
     
     interpreter.cmdloop()
     
-    broker.stop()
+    backend.stop()
     
     t.join()
 

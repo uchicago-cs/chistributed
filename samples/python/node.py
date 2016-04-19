@@ -6,7 +6,7 @@ from zmq.eventloop import ioloop, zmqstream
 ioloop.install()
 
 class Node:
-  def __init__(self, node_name, pub_endpoint, router_endpoint, spammer, peer_names):
+  def __init__(self, node_name, pub_endpoint, router_endpoint, peer_names):
     self.loop = ioloop.ZMQIOLoop.instance()
     self.context = zmq.Context()
 
@@ -27,10 +27,9 @@ class Node:
     self.req.on_recv(self.handle_broker_message)
 
     self.name = node_name
-    self.spammer = spammer
     self.peer_names = peer_names
 
-    self.store = {'foo': 'bar'}
+    self.store = {}
 
     for sig in [signal.SIGTERM, signal.SIGINT, signal.SIGHUP, signal.SIGQUIT]:
       signal.signal(sig, self.shutdown)
@@ -46,6 +45,7 @@ class Node:
     '''
     Nothing important to do here yet.
     '''
+    print "Received broker message"
     pass
 
   def handle(self, msg_frames):
@@ -53,7 +53,7 @@ class Node:
     assert msg_frames[0] == self.name
     # Second field is the empty delimiter
     msg = json.loads(msg_frames[2])
-
+    print "handle", msg
     if msg['type'] == 'get':
       # TODO: handle errors, esp. KeyError
       k = msg['key']
@@ -61,35 +61,21 @@ class Node:
       self.req.send_json({'type': 'log', 'debug': {'event': 'getting', 'node': self.name, 'key': k, 'value': v}})
       self.req.send_json({'type': 'getResponse', 'id': msg['id'], 'value': v})
     elif msg['type'] == 'set':
-      # TODO: Paxos
       k = msg['key']
       v = msg['value']
       self.req.send_json({'type': 'log', 'debug': {'event': 'setting', 'node': self.name, 'key': k, 'value': v}})
       self.store[k] = v
       self.req.send_json({'type': 'setResponse', 'id': msg['id'], 'value': v})
     elif msg['type'] == 'hello':
+      print "Received hello"
       # should be the very first message we see
       if not self.connected:
         self.connected = True
         self.req.send_json({'type': 'helloResponse', 'source': self.name})
-        # if we're a spammer, start spamming!
-        if self.spammer:
-          self.loop.add_callback(self.send_spam)
-    elif msg['type'] == 'spam':
-      self.req.send_json({'type': 'log', 'spam': msg})
+        print "Sent helloResponse"
     else:
       self.req.send_json({'type': 'log', 'debug': {'event': 'unknown', 'node': self.name}})
 
-  def send_spam(self):
-    '''
-    Periodically send spam, with a counter to see which are dropped.
-    '''
-    if not hasattr(self, 'spam_count'):
-      self.spam_count = 0
-    self.spam_count += 1
-    t = self.loop.time()
-    self.req.send_json({'type': 'spam', 'id': self.spam_count, 'timestamp': t, 'source': self.name, 'destination': self.peer_names, 'value': 42})
-    self.loop.add_timeout(t + 1, self.send_spam)
 
   def shutdown(self, sig, frame):
     self.loop.stop()
@@ -109,14 +95,11 @@ if __name__ == '__main__':
   parser.add_argument('--node-name',
       dest='node_name', type=str,
       default='test_node')
-  parser.add_argument('--spammer',
-      dest='spammer', action='store_true')
-  parser.set_defaults(spammer=False)
   parser.add_argument('--peer-names',
       dest='peer_names', type=str,
       default='')
   args = parser.parse_args()
   args.peer_names = args.peer_names.split(',')
 
-  Node(args.node_name, args.pub_endpoint, args.router_endpoint, args.spammer, args.peer_names).start()
+  Node(args.node_name, args.pub_endpoint, args.router_endpoint, args.peer_names).start()
 

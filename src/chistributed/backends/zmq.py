@@ -1,14 +1,14 @@
+# Needed so we can import from the global "zmq" package
+from __future__ import absolute_import
+
 import logging
 import pprint
 import json
 import subprocess
-import os
 import zmq
 import random
 from zmq.eventloop import ioloop, zmqstream
 ioloop.install()
-
-import chistributed.script
 
 class Message(dict):
     '''
@@ -37,154 +37,17 @@ class Message(dict):
         assert destination is not None
         destination = bytes(destination)
         b = json.dumps(self)
+        print "Sending to", destination, " ", b
         # Note the empty delimiter frame
         msg_frames = [destination, '', b]
         socket.send_multipart(msg_frames)
 
-class MessageConditions:
-    def __init__(self, broker):
-        self.broker = broker
-        self.drop_conditions = []
-        self.delay_conditions = []
-        self.tamper_conditions = []
-        self.after_conditions = []
-
-    def add_condition(self, command):
-        if (command['command'] == 'drop'):
-            self.drop_conditions.append(command)
-        elif command['command'] == 'after':
-            self.after_conditions.append(command)
-        elif command['command'] == 'delay':
-            command['messages'] = []
-            self.delay_conditions.append(command)
-        elif command['command'] == 'tamper':
-            self.tamper_conditions.append(command)
-
-    def check_conds(self, conds, message):
-        '''
-        Generic condition checker. Returns (all_match, destinations) where
-        all_match is True iff the message as a whole matches the condition, and
-        destinations is a set containing specific recipients for which it matches.
-        '''
-        all_match = False
-        destinations = set()
-        for cond in conds:
-            if cond['count'] == 0:
-                conds.remove(cond)
-                continue
-            m = self.matches(cond, message)
-            (any_match, sender_match, destination_matches) = m
-            if any_match or sender_match:
-                tamper_all = True
-            destinations = destinations.union(destination_matches)
-            if any(m):
-                cond['count'] -= 1
-
-        return (all_match, destinations)
-
-    def check_drop_conditions(self, message):
-        '''
-        Returns (should_drop, should_receive) where should_drop is true iff the
-        message's sender has messages to be blocked, and should_receive is a list
-        of nodes that should receive the message. Updates drop conditions
-        accordingly.
-        '''
-        should_receive = set(message['destination'])
-        should_drop, should_not_receive = self.check_conds(self.drop_conditions, message)
-        should_receive.difference_update(should_not_receive)
-        return (should_drop, should_receive)
-
-    def check_tamper_conditions(self, message):
-        '''
-        Returns (tamper_all, tamper_destinations) where tamper_all is True iff
-        every message should be tampered and tamper_destinations is a set of
-        destinations that should be tampered with.
-        '''
-        return self.check_conds(self.tamper_conditions, message)
-
-    def check_after_conditions(self, message):
-        '''
-        Tallies against existing after conditions, and pushes their commands to the
-        broker's script queue for any that hits zero.
-        '''
-        for cond in self.after_conditions:
-            # use 1 instead of 0 in order to enact these as the "0th" message comes in
-            if cond['count'] == 1: 
-                self.after_conditions.remove(cond)
-                continue
-            if any(self.matches(cond, message)):
-                cond['count'] -= 1
-            if cond['count'] == 1:
-                self.broker.script = cond['commands'] + self.broker.script
-
-    def check_delay_conditions(self, message):
-        '''
-        Returns (delay_all, delay_destinations, messages) where delay_all is True
-        iff the message should be delayed for all destinations, and
-        delay_destinations is the set of destinations for which it should be
-        delayed, and messages is a list of messages which should be sent now.
-        Furthermore, adds the messages to the condition information so they can be
-        sent later, and returns messages which should be sent now.
-        '''
-        delay_all = False
-        destinations = set()
-        messages = []
-        for cond in self.delay_conditions:
-            if cond['count'] == 0 and len(cond['messages']) == 0:
-                self.delay_conditions.remove(cond)
-                continue
-            for msg in cond['messages']:
-                if msg['delayed'] == cond['delay']:
-                    messages.append(msg['message'])
-                    cond['messages'].remove(msg)
-                else:
-                    msg['delayed'] += 1
-            if delay_all or cond['count'] == 0:
-                continue
-            m = self.matches(cond, message)
-            (any_match, sender_match, destination_matches) = m
-            if any_match or sender_match:
-                delay_all = True
-                msg = {'message': message,
-                             'delayed': 0}
-                cond['messages'].append(msg)
-            else:
-                destinations = destinations.union(destination_matches)
-                for dest in destination_matches:
-                    msg = {'message': Message(message),
-                                 'delayed': 0}
-                    msg['message']['destination'] = [dest]
-                    cond['messages'].append(msg)
-            if any(m):
-                cond['count'] -= 1
-
-        return (delay_all, destinations, messages)
-
-    def matches(self, cond, message):
-        '''
-        Check if a condition matches , returning a triple:
-        (any_match, sender_match, destination_matches)
-        Where any_match is True if the condition doesn't specify a target,
-        sender_match is True if the sender matches, and destination_matches is a
-        list of destinations that match.
-        '''
-        sender_name = self.broker.nodes_by_sender().get(message.sender)
-        any_match = False
-        sender_match = False
-        destination_matches = set()
-        if 'name' not in cond:
-            any_match = True
-        elif 'from' in cond and cond['name'] == sender_name:
-            sender_match = True
-        elif 'from' not in cond and cond['name'] in message['destination']:
-            # this could be unqualified (no to/from) or a to
-            destination_matches.add(cond['name'])
-        return (any_match, sender_match, destination_matches)
-
-class MessageBroker:
-    def __init__(self, pub_endpoint, router_endpoint):
+class ZMQBackend:
+    def __init__(self, node_executable, pub_endpoint, router_endpoint):
         self.loop = ioloop.ZMQIOLoop.instance()
         self.context = zmq.Context()
+        
+        self.node_executable = node_executable.split()
 
         # PUB socket for sending messages to nodes
         self.pub_endpoint = pub_endpoint
@@ -212,8 +75,6 @@ class MessageBroker:
                 format='%(asctime)s [%(name)s] %(levelname)s: %(message)s')
         self.logger = logging.getLogger('broker')
 
-        self.message_conditions = MessageConditions(self)
-        self.partitions = {}
 
     def start(self):
         '''
@@ -226,6 +87,11 @@ class MessageBroker:
     def stop(self):
         self.log('Stopping broker')
         self.loop.stop()        
+        
+        node_ids = self.node_pids.keys()
+        
+        for node_id in node_ids:
+            self.stop_node(node_id)
 
     def receive_message(self, msg_frames):
         '''
@@ -255,16 +121,11 @@ class MessageBroker:
         # handler dict
         if not hasattr(self, "message_handlers"):
             self.message_handlers = {
-                'helloResponse': self.handle_hello,
-                'hello': self.handle_hello,    # for backwards compatibility
-                'log': self.handle_log,
-                'getResponse': self.make_handle_response('getResponse'),
-                'setResponse': self.make_handle_response('setResponse')
+                'helloResponse': self.handle_hello_response,
+                'log': self.handle_log
             }
 
-        resp = self.handle(message)
-        resp.send(self.router, message.sender)
-        self.run_script(message)
+        self.handle(message)
 
     def handle(self, message):
         ty = message['type']
@@ -319,7 +180,7 @@ class MessageBroker:
 
         return Message({'type': 'okay'})
 
-    def handle_hello(self, message):
+    def handle_hello_response(self, message):
         '''
         Every node must send this hello message, with its name in the source field,
         before it will receive any messages. The broker will respond with the
@@ -337,9 +198,6 @@ class MessageBroker:
             return Message({'type': 'error', 'error': err})
 
         self.node_zids[node_name] = message.sender
-
-        if self.script and 'helloResponse' in self.script_conditions:
-            self.script_conditions.remove('helloResponse')
 
         self.log(node_name + " connected")
 
@@ -419,59 +277,7 @@ class MessageBroker:
         '''
         self.logger.info(log_msg)
 
-    def find_partition(self, node_name):
-        '''
-        Retrieve the first encountered partition that the node is in.
-        '''
-        for part in self.partitions.values():
-            if node_name in part:
-                return part
-
-    # ============================
-    # Simulation control/scripting
-    # ============================
-
-    def run_script(self, message=None):
-        '''
-        Runs as much of the script as can be until a blocking command (i.e. set,
-        get, sync).
-
-        Also sets up instance variables only used for scripting.
-        '''
-        if not hasattr(self, "script_handlers"):
-            self.script_handlers = {
-                'start': self.start_node,
-                'stop': self.stop_node,
-                'get': self.send_get,
-                'set': self.send_set,
-                'send': self.send_json,
-                'drop': self.message_conditions.add_condition,
-                'delay': self.message_conditions.add_condition,
-                'after': self.message_conditions.add_condition,
-                'tamper': self.message_conditions.add_condition,
-                'split': self.split_network,
-                'join': self.join_network
-            }
-            self.script_conditions = set()
-            self.current_request_id = 0
-            self.current_request = None
-
-        if message:
-            # generic conditions met here
-            pass
-
-        try:
-            while (len(self.script_conditions) == 0) and len(self.script) > 0:
-                command = self.script.pop(0)
-                f = self.script_handlers[command['command']]
-                f(command)
-                if len(self.script) == 0:
-                    self.log("Script finished")
-        except KeyError as e:
-            self.log("Command not found: " + str(e))
-
-
-    def start_node(self, command):
+    def start_node(self, node_id, extra_params=[]):
         '''
         Start a node with given name and parameters.
 
@@ -479,47 +285,54 @@ class MessageBroker:
 
         Highly unsafe of course.
         '''
-        args = self.node_executable + \
-                     ' --node-name ' + command['name'] + \
-                     ' --pub-endpoint ' + self.pub_endpoint + \
-                     ' --router-endpoint ' + self.router_endpoint + \
-                     command['params']
+        args = self.node_executable[:]
+        
+        args += ['--node-name', node_id,
+                 '--pub-endpoint', self.pub_endpoint,
+                 '--router-endpoint', self.router_endpoint]
+        
+        args += extra_params
 
-        if not hasattr(self, "devnull"):
-            self.devnull = open(os.devnull, "w")
+        # TODO: Make output redirection configurable
+        #if not hasattr(self, "devnull"):
+        #    self.devnull = open(os.devnull, "w")
+        #proc = subprocess.Popen(args, shell=True, stdout=self.devnull, stderr=self.devnull)
+        proc = subprocess.Popen(args)
+        self.node_pids[node_id] = proc
 
-        proc = subprocess.Popen(args, shell=True, stdout=self.devnull, stderr=self.devnull)
-        self.node_pids[command['name']] = proc
+        # Send hello
+                    
+        self.loop.add_callback(self.__hello_callback(node_id))
 
-        self.script_conditions.add('helloResponse')
-
-        self.make_hello_sender(command['name'])()
-
-        pass
-
-    def make_hello_sender(self, node_name):
+    def __hello_callback(self, node_id):
         msg = Message({
             'type': 'hello',
-            'destination': [node_name]
+            'destination': [node_id]
         })
-        def hello_sender():
-            if 'helloResponse' in self.script_conditions:
-                msg.send(self.pub, node_name)
-                self.loop.add_timeout(self.loop.time() + 0.1, hello_sender)
-            return
+        
+        def callback():
+            def hello_sender(tries_left):
+                if node_id not in self.node_zids:
+                    msg.send(self.pub, node_id)
+                    tries_left -= 1
+                    if tries_left > 0:
+                        self.loop.add_timeout(self.loop.time() + 1, hello_sender, tries_left = tries_left)
+            
+            self.loop.add_timeout(self.loop.time() + 0.5, hello_sender, tries_left = 5)
+            
+        return callback
+        
 
-        return hello_sender
-
-    def stop_node(self, command):
+    def stop_node(self, node_id):
         '''
         Sends SIGTERM to the named node.
 
         Node implementations should catch it and shutdown because killing procs is
         risky business.
         '''
-        self.log("stopping " + command['name'])
-        self.node_pids[command['name']].terminate()
-        del self.node_pids[command['name']]
+        self.log("stopping " + node_id)
+        self.node_pids[node_id].terminate()
+        del self.node_pids[node_id]
         pass
 
     def send_get(self, command):
