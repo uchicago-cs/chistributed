@@ -77,6 +77,10 @@ def chistributed_cmd(config_file, config, verbose, debug):
     ds = DistributedSystem(backend, config_obj.get_nodes())
 
     ds.start_node("node-1")
+    ds.start_node("node-2")
+    #ds.start_node("node-3")
+    
+    #ds.send_set_msg("node-1", "A", 42)
     
     interpreter = Interpreter()
     

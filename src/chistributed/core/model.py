@@ -26,11 +26,70 @@
 #  CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
 #  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 #  POSSIBILITY OF SUCH DAMAGE.
+
+from collections import deque
+from threading import Lock
+
 from chistributed.common import ChistributedException
 
 class Message(object):
-    pass
+    
+    def __init__(self, msg_type, description):
+        self.msg_type = msg_type
+        self.description = description
 
+class GetRequestMessage(Message):
+    def __init__(self, destination, msg_id, key):
+        Message.__init__(self, "get", "GET Request")
+        
+        self.destination = destination
+        self.id = msg_id
+        self.key = key
+        
+class GetResponseOKMessage(Message):
+    def __init__(self, msg_id, value):
+        Message.__init__(self, "getResponse", "GET Response (OK)")
+        
+        self.id = msg_id
+        self.value = value
+
+class GetResponseErrorMessage(Message):
+    def __init__(self, msg_id, error):
+        Message.__init__(self, "getResponse", "GET Response (Error)")
+        
+        self.id = msg_id
+        self.error = error
+        
+class SetRequestMessage(Message):
+    def __init__(self, destination, msg_id, key, value):
+        Message.__init__(self, "set", "SET Request")
+        
+        self.destination = destination
+        self.id = msg_id
+        self.key = key
+        self.value = value
+        
+class SetResponseOKMessage(Message):
+    def __init__(self, msg_id):
+        Message.__init__(self, "setResponse", "SET Response (OK)")
+        
+        self.id = msg_id
+
+class SetResponseErrorMessage(Message):
+    def __init__(self, msg_id, error):
+        Message.__init__(self, "setResponse", "SET Response (Error)")
+        
+        self.id = msg_id
+        self.error = error
+        
+class CustomMessage(Message):
+    def __init__(self, msg_type, destination, values):
+        Message.__init__(self, msg_type, "'{}' Message".format(msg_type))
+        
+        self.destination = destination
+        self.values = {}
+        self.values.update(values)     
+        
 
 class Node(object):
     STATE_INIT = 0
@@ -43,9 +102,6 @@ class Node(object):
         self.state = Node.STATE_INIT
 
 
-class Network(object):
-    pass
-
 class DistributedSystem(object):
     
     def __init__(self, backend, nodes):
@@ -53,7 +109,15 @@ class DistributedSystem(object):
         
         self.nodes = {n: Node(n) for n in nodes}
         
-        self.network = Network()
+        # Deques are thread-safe, but we still need a lock
+        # to safely iterate through the list.
+        self.msg_queue = deque()
+        self.msg_queue_lock = Lock()
+        
+        self.pending_set_requests = {}
+        self.pending_get_requests = {}
+        
+        self.next_id = 1
         
     def start_node(self, node_id):
         if not node_id in self.nodes:
@@ -62,6 +126,41 @@ class DistributedSystem(object):
         self.backend.start_node(node_id)
         
         self.nodes[node_id].state = Node.STATE_STARTING
+        
+    def send_set_msg(self, node_id, key, value):
+        msg = SetRequestMessage(node_id, self.next_id, key, value)
+        
+        self.pending_set_requests[self.next_id] = msg
+        
+        self.next_id += 1
+        
+        self.backend.send_message(node_id, msg)
+
+    def send_get_msg(self, node_id):
+        pass
+        
+    def process_message(self, msg):
+        # If the message is a response to a get or a set,
+        # it does not go into the queue. We just process
+        # it directly.
+        
+        
+        self.msg_queue_lock.acquire()
+        self.msg_queue.put(msg)
+        self.msg_queue_lock.release()
+        
+        # TODO: Apply rules on dropping, etc.
+        self.__process_queue()
+        
+        
+    def __process_queue(self):
+        self.msg_queue_lock.acquire()
+
+        # TODO: Apply rules on dropping, etc.
+
+
+        self.msg_queue_lock.release()
+
         
         
         

@@ -10,37 +10,38 @@ import random
 from zmq.eventloop import ioloop, zmqstream
 ioloop.install()
 
-class Message(dict):
+class ZMQMessage(dict):
     '''
     Wraps messages, providing convenient access to the sender and JSON message in
     both bytes and interpreted form (in the case of incoming messages), and
     convenient sending.
     '''
-    def __init__(self, msg):
-        if isinstance(msg, list):
-            # ZMQ frames to be wrapped
-            assert len(msg) == 3
-            self.sender = msg[0]
-            # middle slot is empty delimiter
-            self.original = msg[2]
-            super(Message, self).__init__(json.loads(self.original))
-        elif isinstance(msg, dict):
-            # literal dict or another Message to copy
-            self.sender = None
-            self.original = None
-            super(Message, self).__init__(msg)
-
-    def send(self, socket, destination):
-        '''
-        Given a socket and an optional destination, sends the Message JSON encoded
-        '''
-        assert destination is not None
-        destination = bytes(destination)
-        b = json.dumps(self)
-        print "Sending to", destination, " ", b
-        # Note the empty delimiter frame
-        msg_frames = [destination, '', b]
-        socket.send_multipart(msg_frames)
+    def __init__(self, identity, fields, original_data = None):
+        self.identity = identity
+        self.original_data = original_data
+        
+        super(ZMQMessage, self).__init__(fields)
+            
+    def to_frames(self):
+        frames = []
+        frames.append(bytes(self.identity))
+        frames.append("")
+        frames.append(json.dumps(self))
+        return frames
+            
+    @classmethod
+    def from_msg(cls, msg):
+        pass
+    
+    @classmethod
+    def from_zmq_frames(cls, zmq_message_frames):
+        assert isinstance(zmq_message_frames, list)
+        assert len(zmq_message_frames) == 3
+        
+        fields = json.loads(zmq_message_frames[2])
+        
+        return cls(zmq_message_frames[0], fields, zmq_message_frames[2])
+        
 
 class ZMQBackend:
     def __init__(self, node_executable, pub_endpoint, router_endpoint):
@@ -91,7 +92,49 @@ class ZMQBackend:
         node_ids = self.node_pids.keys()
         
         for node_id in node_ids:
-            self.stop_node(node_id)
+            self.stop_node(node_id)    
+            
+            
+    def start_node(self, node_id, extra_params=[]):
+        '''
+        Start a node with given name and parameters.
+
+        Note all output will be sent to /dev/null (or the platform's equivalent).
+
+        Highly unsafe of course.
+        '''
+        args = self.node_executable[:]
+        
+        args += ['--node-name', node_id,
+                 '--pub-endpoint', self.pub_endpoint,
+                 '--router-endpoint', self.router_endpoint]
+        
+        args += extra_params
+
+        # TODO: Make output redirection configurable
+        #if not hasattr(self, "devnull"):
+        #    self.devnull = open(os.devnull, "w")
+        #proc = subprocess.Popen(args, shell=True, stdout=self.devnull, stderr=self.devnull)
+        proc = subprocess.Popen(args)
+        self.node_pids[node_id] = proc
+
+        # Send hello
+                    
+        self.loop.add_callback(self.__hello_callback(node_id))
+
+        
+    def stop_node(self, node_id):
+        '''
+        Sends SIGTERM to the named node.
+
+        Node implementations should catch it and shutdown because killing procs is
+        risky business.
+        '''
+        self.log("stopping " + node_id)
+        self.node_pids[node_id].terminate()
+        del self.node_pids[node_id]
+        pass        
+                    
 
     def receive_message(self, msg_frames):
         '''
@@ -100,8 +143,38 @@ class ZMQBackend:
         msgs should be a list of two bytes values, the first being the ZMQ ID for
         the sender, and the second being the JSON message from the nodes.
         '''
-        message = Message(msg_frames)
-        self.dispatch(message)
+        message = ZMQMessage.from_zmq_frames(msg_frames)
+
+        # TODO: Better logging
+        print "Received frames:", msg_frames
+
+        if message["type"] == "helloResponse":        
+            node_name = message['source']
+            if node_name in self.node_zids:
+                err = "Duplicate hello from " + node_name
+                self.log(err)
+    
+            self.node_zids[node_name] = message.identity
+    
+            self.log(node_name + " connected")
+        elif message["type"] == "log":
+            node_name = self.nodes_by_sender().get(message.identity, 'unknown node')
+            self.log('log message from {node}:\n{message}'.format(node=node_name, message=pprint.pformat(message)))
+        else:
+            # TODO: escalate to model
+            pass
+        
+        
+    def send_message(self, node_id, msg):
+        pass
+
+
+    def __send_zmq_message(self, zmq_msg):        
+        frames = zmq_msg.to_frames()
+        
+        print "Sending ", frames
+
+        self.pub.send_multipart(frames)
 
     # ================
     # Message handlers
@@ -262,12 +335,6 @@ class ZMQBackend:
         '''
         return {v:k for k, v in self.node_zids.items()}
 
-    def log_message(self, message):
-        '''
-        Log the message with its sender.
-        '''
-        node_name = self.nodes_by_sender().get(message.sender, 'unknown node')
-        self.log('log message from {node}:\n{message}'.format(node=node_name, message=pprint.pformat(message)))
 
     def log(self, log_msg):
         '''
@@ -277,43 +344,15 @@ class ZMQBackend:
         '''
         self.logger.info(log_msg)
 
-    def start_node(self, node_id, extra_params=[]):
-        '''
-        Start a node with given name and parameters.
 
-        Note all output will be sent to /dev/null (or the platform's equivalent).
-
-        Highly unsafe of course.
-        '''
-        args = self.node_executable[:]
-        
-        args += ['--node-name', node_id,
-                 '--pub-endpoint', self.pub_endpoint,
-                 '--router-endpoint', self.router_endpoint]
-        
-        args += extra_params
-
-        # TODO: Make output redirection configurable
-        #if not hasattr(self, "devnull"):
-        #    self.devnull = open(os.devnull, "w")
-        #proc = subprocess.Popen(args, shell=True, stdout=self.devnull, stderr=self.devnull)
-        proc = subprocess.Popen(args)
-        self.node_pids[node_id] = proc
-
-        # Send hello
-                    
-        self.loop.add_callback(self.__hello_callback(node_id))
 
     def __hello_callback(self, node_id):
-        msg = Message({
-            'type': 'hello',
-            'destination': [node_id]
-        })
+        zmq_msg = ZMQMessage(node_id, {'type': 'hello', 'destination': [node_id]})
         
         def callback():
             def hello_sender(tries_left):
                 if node_id not in self.node_zids:
-                    msg.send(self.pub, node_id)
+                    self.__send_zmq_message(zmq_msg)
                     tries_left -= 1
                     if tries_left > 0:
                         self.loop.add_timeout(self.loop.time() + 1, hello_sender, tries_left = tries_left)
@@ -323,17 +362,7 @@ class ZMQBackend:
         return callback
         
 
-    def stop_node(self, node_id):
-        '''
-        Sends SIGTERM to the named node.
 
-        Node implementations should catch it and shutdown because killing procs is
-        risky business.
-        '''
-        self.log("stopping " + node_id)
-        self.node_pids[node_id].terminate()
-        del self.node_pids[node_id]
-        pass
 
     def send_get(self, command):
         assert len(self.script_conditions) == 0
