@@ -28,7 +28,7 @@
 #  POSSIBILITY OF SUCH DAMAGE.
 
 from collections import deque
-from threading import Lock
+from threading import Lock, Condition
 
 from chistributed.common import ChistributedException
 
@@ -100,12 +100,29 @@ class Node(object):
     def __init__(self, node_id):
         self.node_id = node_id
         self.state = Node.STATE_INIT
+        
+        self.cv_lock = Lock()
+        self.cv = Condition(self.cv_lock)
+        
+    def wait_for_state(self, state):
+        self.cv.acquire()
+        while self.state != state:
+            self.cv.wait()
+        self.cv.release()
+        
+    def set_state(self, state):
+        self.cv.acquire()
+        self.state = state
+        self.cv.notify_all()
+        self.cv.release()        
 
 
 class DistributedSystem(object):
     
     def __init__(self, backend, nodes):
         self.backend = backend
+        
+        backend.set_ds(self)
         
         self.nodes = {n: Node(n) for n in nodes}
         
@@ -122,10 +139,10 @@ class DistributedSystem(object):
     def start_node(self, node_id):
         if not node_id in self.nodes:
             raise ChistributedException("No such node: {}".format(node_id))
+
+        self.nodes[node_id].set_state(Node.STATE_STARTING)
         
-        self.backend.start_node(node_id)
-        
-        self.nodes[node_id].state = Node.STATE_STARTING
+        self.backend.start_node(node_id)        
         
     def send_set_msg(self, node_id, key, value):
         msg = SetRequestMessage(node_id, self.next_id, key, value)

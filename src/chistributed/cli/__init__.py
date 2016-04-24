@@ -37,7 +37,7 @@ from chistributed.common.config import Config
 from chistributed.backends.zmq import ZMQBackend
 from chistributed.cli.interpreter import Interpreter
 import threading
-from chistributed.core.model import DistributedSystem
+from chistributed.core.model import DistributedSystem, Node
 
 @click.command(name="chistributed")
 @click.option('--config', '-c', type=str, multiple=True)
@@ -77,10 +77,15 @@ def chistributed_cmd(config_file, config, verbose, debug):
     ds = DistributedSystem(backend, config_obj.get_nodes())
 
     ds.start_node("node-1")
-    ds.start_node("node-2")
+    #ds.start_node("node-2")
     #ds.start_node("node-3")
     
-    #ds.send_set_msg("node-1", "A", 42)
+    ds.nodes["node-1"].wait_for_state(Node.STATE_RUNNING)
+    
+    ds.send_set_msg("node-1", "A", 42)
+    #ds.send_set_msg("node-1", "A", 37)
+    #ds.send_set_msg("node-1", "A", 51)
+    
     
     interpreter = Interpreter()
     
