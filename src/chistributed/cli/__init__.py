@@ -30,13 +30,16 @@
 
 
 import click
+import signal
+import threading
+import sys
+
 from chistributed import RELEASE
 import chistributed.common.log as log
 from chistributed.common import CHISTRIBUTED_FAIL, CHISTRIBUTED_SUCCESS
 from chistributed.common.config import Config
 from chistributed.backends.zmq import ZMQBackend
 from chistributed.cli.interpreter import Interpreter
-import threading
 from chistributed.core.model import DistributedSystem, Node
 
 @click.command(name="chistributed")
@@ -69,27 +72,37 @@ def chistributed_cmd(config_file, config, verbose, debug):
     def backend_thread():
         backend.start()
         print "Backend thread exiting"
+                
 
     t = threading.Thread(target=backend_thread)
     t.daemon = True
     t.start()    
+
+    def signal_handler(signal, frame):
+        print('SIGINT received')
+
+        backend.stop()
+                
+    signal.signal(signal.SIGINT, signal_handler)
     
     ds = DistributedSystem(backend, config_obj.get_nodes())
 
-    ds.start_node("node-1")
-    #ds.start_node("node-2")
+    ds.start_node("node-1", ["--peer", "node-2"])
+    ds.start_node("node-2", ["--peer", "node-1"])
     #ds.start_node("node-3")
     
     ds.nodes["node-1"].wait_for_state(Node.STATE_RUNNING)
+    ds.nodes["node-2"].wait_for_state(Node.STATE_RUNNING)
     
     ds.send_set_msg("node-1", "A", 42)
     #ds.send_set_msg("node-1", "A", 37)
     #ds.send_set_msg("node-1", "A", 51)
     
     
-    interpreter = Interpreter()
-    
-    interpreter.cmdloop()
+    if backend.running:
+        interpreter = Interpreter()
+        
+        interpreter.cmdloop()
     
     backend.stop()
     

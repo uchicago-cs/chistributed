@@ -136,13 +136,13 @@ class DistributedSystem(object):
         
         self.next_id = 1
         
-    def start_node(self, node_id):
+    def start_node(self, node_id, extra_params=[]):
         if not node_id in self.nodes:
             raise ChistributedException("No such node: {}".format(node_id))
 
         self.nodes[node_id].set_state(Node.STATE_STARTING)
         
-        self.backend.start_node(node_id)        
+        self.backend.start_node(node_id, extra_params)        
         
     def send_set_msg(self, node_id, key, value):
         msg = SetRequestMessage(node_id, self.next_id, key, value)
@@ -161,19 +161,28 @@ class DistributedSystem(object):
         # it does not go into the queue. We just process
         # it directly.
         
+        if isinstance(msg, CustomMessage):
+            self.msg_queue_lock.acquire()
+            self.msg_queue.appendleft(msg)
+            self.msg_queue_lock.release()
         
-        self.msg_queue_lock.acquire()
-        self.msg_queue.put(msg)
-        self.msg_queue_lock.release()
-        
-        # TODO: Apply rules on dropping, etc.
-        self.__process_queue()
+            # TODO: Apply rules on dropping, etc.
+            self.__process_queue()
         
         
     def __process_queue(self):
         self.msg_queue_lock.acquire()
 
-        # TODO: Apply rules on dropping, etc.
+        n = len(self.msg_queue)
+        
+        while n > 0:
+            msg = self.msg_queue.pop()
+            
+            # TODO: Apply rules on dropping, etc.            
+            
+            self.backend.send_message(msg.destination, msg)
+            
+            n -= 1
 
 
         self.msg_queue_lock.release()

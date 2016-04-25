@@ -7,7 +7,7 @@ import json
 import subprocess
 import zmq
 from zmq.eventloop import ioloop, zmqstream
-from chistributed.core.model import SetRequestMessage, Node
+from chistributed.core.model import SetRequestMessage, Node, CustomMessage
 ioloop.install()
 
 class ZMQMessage(dict):
@@ -26,6 +26,19 @@ class ZMQMessage(dict):
         frames.append(json.dumps(self))
         return frames
             
+    def to_msg(self):
+        if self["type"] == "set":
+            pass
+        elif self["type"] == "setResponse":
+            pass
+        elif self["type"] == "get":
+            pass
+        elif self["type"] == "getResponse":
+            pass
+        else:
+            return CustomMessage(self["type"], self["destination"], self)
+            
+            
     @classmethod
     def from_msg(cls, msg):
         if isinstance(msg, SetRequestMessage):
@@ -34,7 +47,11 @@ class ZMQMessage(dict):
                       "key": msg.key,
                       "value": msg.value}
             return cls(msg.destination, fields)
-            
+        elif isinstance(msg, CustomMessage):
+            fields = {"type": msg.msg_type,
+                      "destination": msg.destination}
+            fields.update(msg.values)
+            return cls(msg.destination, fields)      
     
     @classmethod
     def from_zmq_frames(cls, zmq_message_frames):
@@ -67,11 +84,16 @@ class ZMQBackend:
         self.router = zmqstream.ZMQStream(self.router_sock, self.loop)
         self.router.on_recv(self.receive_message)
 
-        # "Routing" table; maps node names to ZMQ IDs.
-        # (This direction should be more common than the reverse.)
-        self.node_zids = dict()
+        # Map from node name to ZID
+        self.node_zid = {}
+        
+        # And from ZID to node name
+        self.zid_node = {}
+        
+        
+        
         # Maps node names to OS PIDs for stopping
-        self.node_pids = dict()
+        self.node_pids = {}
 
         self.ds = None
 
@@ -80,6 +102,8 @@ class ZMQBackend:
         logging.basicConfig(level=logging.DEBUG,
                 format='%(asctime)s [%(name)s] %(levelname)s: %(message)s')
         self.logger = logging.getLogger('broker')
+        
+        self.running = True
 
     def set_ds(self, ds):
         self.ds = ds
@@ -94,7 +118,9 @@ class ZMQBackend:
         
     def stop(self):
         self.log('Stopping broker')
-        self.loop.stop()        
+        self.running = False
+
+        self.loop.stop()
         
         node_ids = self.node_pids.keys()
         
@@ -152,15 +178,19 @@ class ZMQBackend:
         '''
         zmq_msg = ZMQMessage.from_zmq_frames(msg_frames)
 
-        self.log("Received frames: %s" % (msg_frames,))
-
+        if zmq_msg["type"] == "helloResponse":
+            self.log("RECV %s: %s" % (zmq_msg['source'], msg_frames[2]))
+        else:
+            self.log("RECV %s: %s" % (self.zid_node.get(msg_frames[0], "unknown node"), msg_frames[2]))
+ 
         if zmq_msg["type"] == "helloResponse":        
             node_name = zmq_msg['source']
-            if node_name in self.node_zids:
+            if node_name in self.node_zid:
                 err = "Duplicate hello from " + node_name
                 self.log(err)
     
-            self.node_zids[node_name] = zmq_msg.identity
+            self.node_zid[node_name] = zmq_msg.identity
+            self.zid_node[zmq_msg.identity] = node_name
         
             self.log(node_name + " connected")
             
@@ -171,11 +201,15 @@ class ZMQBackend:
                                         json.dumps({"type": "ack", "original": zmq_msg.fields})])
 
         elif zmq_msg["type"] == "log":
-            node_name = self.nodes_by_sender().get(zmq_msg.identity, 'unknown node')
-            self.log('log message from {node}:\n{message}'.format(node=node_name, message=pprint.pformat(message)))
-        else:
-            # TODO: escalate to model
             pass
+        else:
+            self.router.send_multipart([zmq_msg.identity,
+                                        "",
+                                        json.dumps({"type": "ack", "original": zmq_msg.fields})])            
+            # TODO: escalate to model
+            msg = zmq_msg.to_msg()
+            if msg is not None:
+                self.ds.process_message(msg)
                 
     def send_message(self, node_id, msg):
         zmq_msg = ZMQMessage.from_msg(msg)
@@ -186,7 +220,7 @@ class ZMQBackend:
     def __send_zmq_message(self, zmq_msg):        
         frames = zmq_msg.to_frames()
         
-        self.log("Sending: %s" % (frames,))
+        self.log("SEND %s: %s" % (frames[0], frames[2]))
 
         self.pub.send_multipart(frames)
 
@@ -194,12 +228,6 @@ class ZMQBackend:
     # =======================
     # Misc. utility functions
     # =======================
-
-    def nodes_by_sender(self):
-        '''
-        Used to look up node names from the unique sender ID.
-        '''
-        return {v:k for k, v in self.node_zids.items()}
 
 
     def log(self, log_msg):
@@ -217,7 +245,7 @@ class ZMQBackend:
         
         def callback():
             def hello_sender(tries_left):
-                if node_id not in self.node_zids:
+                if node_id not in self.node_zid:
                     self.__send_zmq_message(zmq_msg)
                     tries_left -= 1
                     if tries_left > 0:
