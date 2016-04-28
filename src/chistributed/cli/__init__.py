@@ -64,7 +64,9 @@ def chistributed_cmd(config_file, config, verbose, debug):
 
     backend = ZMQBackend(config_obj.get_node_executable(), 'tcp://127.0.0.1:23310', 'tcp://127.0.0.1:23311', debug = debug)
     
-    interpreter = Interpreter()
+    ds = DistributedSystem(backend, config_obj.get_nodes())
+
+    interpreter = Interpreter(ds)
     
     # Run broker in separate thread
     def backend_thread():
@@ -86,10 +88,7 @@ def chistributed_cmd(config_file, config, verbose, debug):
                 
     signal.signal(signal.SIGINT, signal_handler)
     
-    try:
-    
-        ds = DistributedSystem(backend, config_obj.get_nodes())
-    
+    try:    
         ds.start_node("node-1", ["--peer", "node-2"])
         ds.start_node("node-2", ["--peer", "node-1"])
         #ds.start_node("node-3")
@@ -97,12 +96,10 @@ def chistributed_cmd(config_file, config, verbose, debug):
         ds.nodes["node-1"].wait_for_state(Node.STATE_RUNNING)
         ds.nodes["node-2"].wait_for_state(Node.STATE_RUNNING)
         
+        
         ds.send_set_msg("node-1", "A", 42)
         ds.send_get_msg("node-1", "A")
         ds.send_get_msg("node-1", "B")
-        ds.send_get_msg("node-2", "A")
-        #ds.send_set_msg("node-1", "A", 51)
-        
         
         if backend.running:
             # Call _cmdloop instead of cmdloop to prevent cmd2 from

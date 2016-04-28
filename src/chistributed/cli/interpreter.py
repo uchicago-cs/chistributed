@@ -32,5 +32,9 @@ import cmd2
 class Interpreter(cmd2.Cmd):
     prompt = "> "
     
+    def __init__(self, ds):
+        self.ds = ds
+        cmd2.Cmd.__init__(self)
+    
     def do_foo(self, s):
-        print s
+        self.ds.send_get_msg("node-2", "A")

@@ -4,6 +4,7 @@ import signal
 import zmq
 import time
 import click
+import time
 
 import colorama
 colorama.init()
@@ -16,7 +17,7 @@ ioloop.install()
 
 class Node:
     def __init__(self, node_name, pub_endpoint, router_endpoint, peer_names, debug):
-        self.loop = ioloop.ZMQIOLoop.instance()
+        self.loop = ioloop.IOLoop.instance()
         self.context = zmq.Context()
 
         self.connected = False
@@ -82,12 +83,12 @@ class Node:
         self.log_debug("Received " + str(msg_frames))
         if msg['type'] == 'get':
             k = msg['key']
-            
+            time.sleep(0.1)
             if k in self.store:            
                 v = self.store[k]
-                self.req.send_json({'type': 'getResponse', 'id': msg['id'], 'key': k, 'value': v})
+                self.send_to_broker({'type': 'getResponse', 'id': msg['id'], 'key': k, 'value': v})
             else:
-                self.req.send_json({'type': 'getResponse', 'id': msg['id'], 'error': "No such key: %s" % k})
+                self.send_to_broker({'type': 'getResponse', 'id': msg['id'], 'error': "No such key: %s" % k})
                 
         elif msg['type'] == 'set':
             k = msg['key']
@@ -99,7 +100,11 @@ class Node:
                 self.send_to_broker({'type': 'dupl', 'destination': p, 'key': k, 'value': v})
             
             self.send_to_broker({'type': 'setResponse', 'id': msg['id'], 'key': k, 'value': v})
-            
+        elif msg['type'] == 'dupl':
+            k = msg['key']
+            v = msg['value']
+
+            self.store[k] = v           
         elif msg['type'] == 'hello':
             # should be the very first message we see
             if not self.connected:
@@ -129,7 +134,6 @@ def run(pub_endpoint, router_endpoint, node_name, peer, debug):
     n = Node(node_name, pub_endpoint, router_endpoint, peer, debug)
     
     n.start()
-
 
 if __name__ == '__main__':
     run()

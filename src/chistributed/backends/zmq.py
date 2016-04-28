@@ -82,7 +82,7 @@ class ZMQMessage(dict):
 
 class ZMQBackend:
     def __init__(self, node_executable, pub_endpoint, router_endpoint, debug=False):
-        self.loop = ioloop.ZMQIOLoop.instance()
+        self.loop = ioloop.IOLoop.instance()
         self.context = zmq.Context()
         
         self.node_executable = node_executable.split()
@@ -175,7 +175,7 @@ class ZMQBackend:
 
         # Send hello
         self.loop.add_callback(self.__hello_callback(node_id))
-
+        
         
     def stop_node(self, node_id):
         '''
@@ -227,7 +227,7 @@ class ZMQBackend:
             self.router.send_multipart([zmq_msg.identity,
                                         "",
                                         json.dumps({"type": "ack", "original": zmq_msg.fields})])            
-            # TODO: escalate to model
+            
             msg = zmq_msg.to_msg()
             if msg is not None:
                 self.ds.process_message(msg)
@@ -244,6 +244,13 @@ class ZMQBackend:
         log.debug("SEND %s: %s" % (frames[0], frames[2]))
 
         self.pub.send_multipart(frames)
+        
+        # This shouldn't be necessary but, for some reason, pyzmq stops
+        # sending messages on the PUB socket after about a second or so.
+        # IOLoop is somehow not receiving the WRITE events correctly.
+        # Need to revisit this at some point, but this at least ensures
+        # that messages get sent.
+        self.pub.flush()
 
     def __hello_callback(self, node_id):
         zmq_msg = ZMQMessage(node_id, {'type': 'hello', 'destination': [node_id]})

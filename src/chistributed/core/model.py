@@ -183,36 +183,37 @@ class DistributedSystem(object):
                 s += colorama.Style.RESET_ALL
                 print s
             else:
+                msg_name = "%s id=%s" % (msg_type, msg.id)
                 if isinstance(msg, GetResponseErrorMessage):
                     s = colorama.Style.BRIGHT + colorama.Fore.RED
-                    s += "ERROR: GET %s failed (k=%s): %s" % (msg.id, pending.key, msg.error)
+                    s += "ERROR: %s failed (k=%s): %s" % (msg_name, pending.key, msg.error)
                     s += colorama.Style.RESET_ALL
                     print s
                 elif isinstance(msg, SetResponseErrorMessage):
                     s = colorama.Style.BRIGHT + colorama.Fore.RED
-                    s += "ERROR: SET %s failed (%s=%s): %s" % (msg.id, pending.key, pending.value, msg.error)
+                    s += "ERROR: %s failed (%s=%s): %s" % (msg_name, pending.key, pending.value, msg.error)
                     s += colorama.Style.RESET_ALL
                     print s
                 elif isinstance(msg, GetResponseOKMessage):
                     if pending.key != msg.key:
                         s = colorama.Style.BRIGHT + colorama.Fore.YELLOW
-                        s += "WARNING: GET response id=%i has unexpected key (got %s=%s, expected %s=%s" % (msg.id, msg.key, msg.value, pending.key, msg.value)
+                        s += "WARNING: %s response has unexpected key (got %s=%s, expected %s=%s" % (msg_name, msg.key, msg.value, pending.key, msg.value)
                         s += colorama.Style.RESET_ALL
                         print s                    
                     else:
                         s = colorama.Style.BRIGHT + colorama.Fore.GREEN
-                        s += "GET OK: %s = %s" % (msg.key, msg.value)
+                        s += "%s OK: %s = %s" % (msg_name, msg.key, msg.value)
                         s += colorama.Style.RESET_ALL
                         print s
                 elif isinstance(msg, SetResponseOKMessage):
                     if pending.key != msg.key or pending.value != msg.value:
                         s = colorama.Style.BRIGHT + colorama.Fore.YELLOW
-                        s += "WARNING: SET response id=%i has unexpected values (got %s=%s, expected %s=%s" % (msg.id, msg.key, msg.value, pending.key, pending.value)
+                        s += "WARNING: %s response has unexpected values (got %s=%s, expected %s=%s" % (msg_name, msg.key, msg.value, pending.key, pending.value)
                         s += colorama.Style.RESET_ALL
                         print s                    
                     else:
                         s = colorama.Style.BRIGHT + colorama.Fore.GREEN
-                        s += "SET OK: %s = %s" % (msg.key, msg.value)
+                        s += "%s OK: %s = %s" % (msg_name, msg.key, msg.value)
                         s += colorama.Style.RESET_ALL
                         print s
                         
