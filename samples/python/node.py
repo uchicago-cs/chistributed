@@ -81,10 +81,14 @@ class Node:
         msg = json.loads(msg_frames[2])
         self.log_debug("Received " + str(msg_frames))
         if msg['type'] == 'get':
-            # TODO: handle errors, esp. KeyError
             k = msg['key']
-            v = self.store[k]
-            self.req.send_json({'type': 'getResponse', 'id': msg['id'], 'value': v})
+            
+            if k in self.store:            
+                v = self.store[k]
+                self.req.send_json({'type': 'getResponse', 'id': msg['id'], 'key': k, 'value': v})
+            else:
+                self.req.send_json({'type': 'getResponse', 'id': msg['id'], 'error': "No such key: %s" % k})
+                
         elif msg['type'] == 'set':
             k = msg['key']
             v = msg['value']
@@ -94,7 +98,7 @@ class Node:
             for p in self.peer_names:
                 self.send_to_broker({'type': 'dupl', 'destination': p, 'key': k, 'value': v})
             
-            self.send_to_broker({'type': 'setResponse', 'id': msg['id']})
+            self.send_to_broker({'type': 'setResponse', 'id': msg['id'], 'key': k, 'value': v})
             
         elif msg['type'] == 'hello':
             # should be the very first message we see

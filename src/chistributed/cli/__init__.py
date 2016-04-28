@@ -41,6 +41,7 @@ from chistributed.common.config import Config
 from chistributed.backends.zmq import ZMQBackend
 from chistributed.cli.interpreter import Interpreter
 from chistributed.core.model import DistributedSystem, Node
+import traceback
 
 @click.command(name="chistributed")
 @click.option('--config', '-c', type=str, multiple=True)
@@ -49,11 +50,6 @@ from chistributed.core.model import DistributedSystem, Node
 @click.option('--debug', is_flag=True)
 @click.version_option(version=RELEASE)
 def chistributed_cmd(config_file, config, verbose, debug):
-    global VERBOSE, DEBUG
-    
-    VERBOSE = verbose
-    DEBUG = debug
-    
     log.init_logging(verbose, debug)
 
     config_overrides = {}
@@ -66,13 +62,13 @@ def chistributed_cmd(config_file, config, verbose, debug):
 
     config_obj = Config.get_config(config_file, config_overrides)
 
-    backend = ZMQBackend(config_obj.get_node_executable(), 'tcp://127.0.0.1:23310', 'tcp://127.0.0.1:23311')
+    backend = ZMQBackend(config_obj.get_node_executable(), 'tcp://127.0.0.1:23310', 'tcp://127.0.0.1:23311', debug = debug)
+    
+    interpreter = Interpreter()
     
     # Run broker in separate thread
     def backend_thread():
-        backend.start()
-        print "Backend thread exiting"
-                
+        backend.start()                
 
     t = threading.Thread(target=backend_thread)
     t.daemon = True
@@ -80,29 +76,43 @@ def chistributed_cmd(config_file, config, verbose, debug):
 
     def signal_handler(signal, frame):
         print('SIGINT received')
-
         backend.stop()
+        
+        t.join()
+
+        interpreter.do_quit(None)
+        
+        sys.exit(1)
                 
     signal.signal(signal.SIGINT, signal_handler)
     
-    ds = DistributedSystem(backend, config_obj.get_nodes())
-
-    ds.start_node("node-1", ["--peer", "node-2"])
-    ds.start_node("node-2", ["--peer", "node-1"])
-    #ds.start_node("node-3")
+    try:
     
-    ds.nodes["node-1"].wait_for_state(Node.STATE_RUNNING)
-    ds.nodes["node-2"].wait_for_state(Node.STATE_RUNNING)
+        ds = DistributedSystem(backend, config_obj.get_nodes())
     
-    ds.send_set_msg("node-1", "A", 42)
-    #ds.send_set_msg("node-1", "A", 37)
-    #ds.send_set_msg("node-1", "A", 51)
-    
-    
-    if backend.running:
-        interpreter = Interpreter()
+        ds.start_node("node-1", ["--peer", "node-2"])
+        ds.start_node("node-2", ["--peer", "node-1"])
+        #ds.start_node("node-3")
         
-        interpreter.cmdloop()
+        ds.nodes["node-1"].wait_for_state(Node.STATE_RUNNING)
+        ds.nodes["node-2"].wait_for_state(Node.STATE_RUNNING)
+        
+        ds.send_set_msg("node-1", "A", 42)
+        ds.send_get_msg("node-1", "A")
+        ds.send_get_msg("node-1", "B")
+        ds.send_get_msg("node-2", "A")
+        #ds.send_set_msg("node-1", "A", 51)
+        
+        
+        if backend.running:
+            # Call _cmdloop instead of cmdloop to prevent cmd2 from
+            # trying to parse command-line arguments
+            interpreter._cmdloop()
+    except Exception, e:
+        print "ERROR: Unexpected exception %s" % (e)
+        if debug:
+            print traceback.format_exc()
+        interpreter.do_quit(None)
     
     backend.stop()
     

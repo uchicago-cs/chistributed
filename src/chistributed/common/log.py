@@ -39,14 +39,9 @@ def init_logging(verbose = False, debug = False):
     else:
         level = logging.WARNING
     
-    l = logging.getLogger("chistributed")
-    l.setLevel(logging.DEBUG)
+    logging.basicConfig(level=level,
+                format='%(asctime)s [%(name)s] %(levelname)s: %(message)s')    
     
-    fh = logging.StreamHandler()
-    fh.setLevel(level)
-    formatter = logging.Formatter('%(asctime)s %(levelname)-8s %(message)s')
-    fh.setFormatter(formatter)
-    l.addHandler(fh)        
 
 def log(msg, func):
     func(msg)

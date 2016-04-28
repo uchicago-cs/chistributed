@@ -30,6 +30,9 @@
 from collections import deque
 from threading import Lock, Condition
 
+import colorama
+colorama.init()
+
 from chistributed.common import ChistributedException
 
 class Message(object):
@@ -47,10 +50,11 @@ class GetRequestMessage(Message):
         self.key = key
         
 class GetResponseOKMessage(Message):
-    def __init__(self, msg_id, value):
+    def __init__(self, msg_id, key, value):
         Message.__init__(self, "getResponse", "GET Response (OK)")
         
         self.id = msg_id
+        self.key = key
         self.value = value
 
 class GetResponseErrorMessage(Message):
@@ -70,10 +74,12 @@ class SetRequestMessage(Message):
         self.value = value
         
 class SetResponseOKMessage(Message):
-    def __init__(self, msg_id):
+    def __init__(self, msg_id, key, value):
         Message.__init__(self, "setResponse", "SET Response (OK)")
         
         self.id = msg_id
+        self.key = key
+        self.value = value
 
 class SetResponseErrorMessage(Message):
     def __init__(self, msg_id, error):
@@ -153,15 +159,69 @@ class DistributedSystem(object):
         
         self.backend.send_message(node_id, msg)
 
-    def send_get_msg(self, node_id):
-        pass
+    def send_get_msg(self, node_id, key):
+        msg = GetRequestMessage(node_id, self.next_id, key)
+        
+        self.pending_get_requests[self.next_id] = msg
+        
+        self.next_id += 1
+        
+        self.backend.send_message(node_id, msg)
         
     def process_message(self, msg):
-        # If the message is a response to a get or a set,
-        # it does not go into the queue. We just process
-        # it directly.
-        
-        if isinstance(msg, CustomMessage):
+        if isinstance(msg, (GetResponseOKMessage, GetResponseErrorMessage, SetResponseOKMessage, SetResponseErrorMessage)):
+            if isinstance(msg, (GetResponseOKMessage, GetResponseErrorMessage)):
+                pending = self.pending_get_requests.get(msg.id, None)
+                msg_type = "GET"
+            elif isinstance(msg, (SetResponseOKMessage, SetResponseErrorMessage)):
+                pending = self.pending_set_requests.get(msg.id, None)
+                msg_type = "SET"
+                
+            if pending is None:
+                s = colorama.Style.BRIGHT + colorama.Fore.YELLOW
+                s += "WARNING: Received unexpected %s response id=%i" % (msg_type, msg.id)
+                s += colorama.Style.RESET_ALL
+                print s
+            else:
+                if isinstance(msg, GetResponseErrorMessage):
+                    s = colorama.Style.BRIGHT + colorama.Fore.RED
+                    s += "ERROR: GET %s failed (k=%s): %s" % (msg.id, pending.key, msg.error)
+                    s += colorama.Style.RESET_ALL
+                    print s
+                elif isinstance(msg, SetResponseErrorMessage):
+                    s = colorama.Style.BRIGHT + colorama.Fore.RED
+                    s += "ERROR: SET %s failed (%s=%s): %s" % (msg.id, pending.key, pending.value, msg.error)
+                    s += colorama.Style.RESET_ALL
+                    print s
+                elif isinstance(msg, GetResponseOKMessage):
+                    if pending.key != msg.key:
+                        s = colorama.Style.BRIGHT + colorama.Fore.YELLOW
+                        s += "WARNING: GET response id=%i has unexpected key (got %s=%s, expected %s=%s" % (msg.id, msg.key, msg.value, pending.key, msg.value)
+                        s += colorama.Style.RESET_ALL
+                        print s                    
+                    else:
+                        s = colorama.Style.BRIGHT + colorama.Fore.GREEN
+                        s += "GET OK: %s = %s" % (msg.key, msg.value)
+                        s += colorama.Style.RESET_ALL
+                        print s
+                elif isinstance(msg, SetResponseOKMessage):
+                    if pending.key != msg.key or pending.value != msg.value:
+                        s = colorama.Style.BRIGHT + colorama.Fore.YELLOW
+                        s += "WARNING: SET response id=%i has unexpected values (got %s=%s, expected %s=%s" % (msg.id, msg.key, msg.value, pending.key, pending.value)
+                        s += colorama.Style.RESET_ALL
+                        print s                    
+                    else:
+                        s = colorama.Style.BRIGHT + colorama.Fore.GREEN
+                        s += "SET OK: %s = %s" % (msg.key, msg.value)
+                        s += colorama.Style.RESET_ALL
+                        print s
+                        
+                if isinstance(msg, (GetResponseOKMessage, GetResponseErrorMessage)):
+                    del self.pending_get_requests[msg.id]
+                elif isinstance(msg, (SetResponseOKMessage, SetResponseErrorMessage)):
+                    del self.pending_set_requests[msg.id]                        
+                            
+        elif isinstance(msg, CustomMessage):
             self.msg_queue_lock.acquire()
             self.msg_queue.appendleft(msg)
             self.msg_queue_lock.release()

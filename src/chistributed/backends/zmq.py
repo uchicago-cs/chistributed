@@ -1,14 +1,20 @@
 # Needed so we can import from the global "zmq" package
 from __future__ import absolute_import
 
-import logging
-import pprint
 import json
 import subprocess
 import zmq
 from zmq.eventloop import ioloop, zmqstream
-from chistributed.core.model import SetRequestMessage, Node, CustomMessage
+import os
 ioloop.install()
+
+from chistributed.core.model import SetRequestMessage, Node, CustomMessage,\
+    SetResponseErrorMessage, GetResponseErrorMessage, SetResponseOKMessage,\
+    GetResponseOKMessage, GetRequestMessage
+import chistributed.common.log as log
+
+
+
 
 class ZMQMessage(dict):
     
@@ -30,18 +36,29 @@ class ZMQMessage(dict):
         if self["type"] == "set":
             pass
         elif self["type"] == "setResponse":
-            pass
+            if "error" in self:
+                return SetResponseErrorMessage(self["id"], self["error"])
+            else:
+                return SetResponseOKMessage(self["id"], self["key"], self["value"])                
         elif self["type"] == "get":
             pass
         elif self["type"] == "getResponse":
-            pass
+            if "error" in self:
+                return GetResponseErrorMessage(self["id"], self["error"])
+            else:
+                return GetResponseOKMessage(self["id"], self["key"], self["value"])                
         else:
             return CustomMessage(self["type"], self["destination"], self)
             
             
     @classmethod
     def from_msg(cls, msg):
-        if isinstance(msg, SetRequestMessage):
+        if isinstance(msg, GetRequestMessage):
+            fields = {"type": "get",
+                      "id": msg.id,
+                      "key": msg.key}
+            return cls(msg.destination, fields)
+        elif isinstance(msg, SetRequestMessage):
             fields = {"type": "set",
                       "id": msg.id,
                       "key": msg.key,
@@ -64,7 +81,7 @@ class ZMQMessage(dict):
         
 
 class ZMQBackend:
-    def __init__(self, node_executable, pub_endpoint, router_endpoint):
+    def __init__(self, node_executable, pub_endpoint, router_endpoint, debug=False):
         self.loop = ioloop.ZMQIOLoop.instance()
         self.context = zmq.Context()
         
@@ -90,19 +107,14 @@ class ZMQBackend:
         # And from ZID to node name
         self.zid_node = {}
         
-        
-        
         # Maps node names to OS PIDs for stopping
         self.node_pids = {}
 
+        self.debug = debug
+        self.devnull = None
+
         self.ds = None
 
-        # logging configuration
-        # TODO: should be customizable by command line args
-        logging.basicConfig(level=logging.DEBUG,
-                format='%(asctime)s [%(name)s] %(levelname)s: %(message)s')
-        self.logger = logging.getLogger('broker')
-        
         self.running = True
 
     def set_ds(self, ds):
@@ -113,11 +125,11 @@ class ZMQBackend:
         Start the IOLoop. Will allow messages to be send and received
         asynchronously on the pub and router ZMQStreams.
         '''
-        self.log('Starting broker')
+        log.info('Starting broker')
         self.loop.start()
         
     def stop(self):
-        self.log('Stopping broker')
+        log.info('Stopping broker')
         self.running = False
 
         self.loop.stop()
@@ -148,11 +160,20 @@ class ZMQBackend:
         #if not hasattr(self, "devnull"):
         #    self.devnull = open(os.devnull, "w")
         #proc = subprocess.Popen(args, shell=True, stdout=self.devnull, stderr=self.devnull)
-        proc = subprocess.Popen(args)
+        
+        if self.debug:
+            stdout = None
+            stderr = None
+        else:
+            if self.devnull is None:
+                self.devnull = open(os.devnull, "w")
+            stdout = self.devnull
+            stderr = self.devnull
+            
+        proc = subprocess.Popen(args, stdout = stdout, stderr = stderr)
         self.node_pids[node_id] = proc
 
         # Send hello
-                    
         self.loop.add_callback(self.__hello_callback(node_id))
 
         
@@ -163,7 +184,7 @@ class ZMQBackend:
         Node implementations should catch it and shutdown because killing procs is
         risky business.
         '''
-        self.log("stopping " + node_id)
+        log.info("Stopping node " + node_id)
         self.node_pids[node_id].terminate()
         del self.node_pids[node_id]
         pass        
@@ -179,20 +200,20 @@ class ZMQBackend:
         zmq_msg = ZMQMessage.from_zmq_frames(msg_frames)
 
         if zmq_msg["type"] == "helloResponse":
-            self.log("RECV %s: %s" % (zmq_msg['source'], msg_frames[2]))
+            log.debug("RECV %s: %s" % (zmq_msg['source'], msg_frames[2]))
         else:
-            self.log("RECV %s: %s" % (self.zid_node.get(msg_frames[0], "unknown node"), msg_frames[2]))
+            log.debug("RECV %s: %s" % (self.zid_node.get(msg_frames[0], "unknown node"), msg_frames[2]))
  
         if zmq_msg["type"] == "helloResponse":        
             node_name = zmq_msg['source']
             if node_name in self.node_zid:
                 err = "Duplicate hello from " + node_name
-                self.log(err)
+                log.debug(err)
     
             self.node_zid[node_name] = zmq_msg.identity
             self.zid_node[zmq_msg.identity] = node_name
         
-            self.log(node_name + " connected")
+            log.info(node_name + " connected")
             
             self.ds.nodes[node_name].set_state(Node.STATE_RUNNING)
 
@@ -220,25 +241,9 @@ class ZMQBackend:
     def __send_zmq_message(self, zmq_msg):        
         frames = zmq_msg.to_frames()
         
-        self.log("SEND %s: %s" % (frames[0], frames[2]))
+        log.debug("SEND %s: %s" % (frames[0], frames[2]))
 
         self.pub.send_multipart(frames)
-
-
-    # =======================
-    # Misc. utility functions
-    # =======================
-
-
-    def log(self, log_msg):
-        '''
-        Log the given line at INFO level.
-
-        TODO: meaningful use of different levels.
-        '''
-        self.logger.info(log_msg)
-
-
 
     def __hello_callback(self, node_id):
         zmq_msg = ZMQMessage(node_id, {'type': 'hello', 'destination': [node_id]})
