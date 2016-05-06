@@ -1,0 +1,3 @@
+start -n node-1
+start -n node-2
+set -n node-1 -k A -v 42

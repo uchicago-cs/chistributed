@@ -48,8 +48,9 @@ import traceback
 @click.option('--config-file', type=click.File('r'))
 @click.option('--verbose', '-v', is_flag=True)
 @click.option('--debug', is_flag=True)
+@click.argument('script_file', type=str, default=None)
 @click.version_option(version=RELEASE)
-def chistributed_cmd(config_file, config, verbose, debug):
+def chistributed_cmd(config_file, config, verbose, debug, script_file):
     log.init_logging(verbose, debug)
 
     config_overrides = {}
@@ -88,20 +89,11 @@ def chistributed_cmd(config_file, config, verbose, debug):
                 
     signal.signal(signal.SIGINT, signal_handler)
     
-    try:    
-        ds.start_node("node-1", ["--peer", "node-2"])
-        ds.start_node("node-2", ["--peer", "node-1"])
-        #ds.start_node("node-3")
-        
-        ds.nodes["node-1"].wait_for_state(Node.STATE_RUNNING)
-        ds.nodes["node-2"].wait_for_state(Node.STATE_RUNNING)
-        
-        
-        ds.send_set_msg("node-1", "A", 42)
-        ds.send_get_msg("node-1", "A")
-        ds.send_get_msg("node-1", "B")
-        
+    try:            
         if backend.running:
+            if script_file is not None:
+                interpreter.do_load(script_file)            
+            
             # Call _cmdloop instead of cmdloop to prevent cmd2 from
             # trying to parse command-line arguments
             interpreter._cmdloop()
