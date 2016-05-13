@@ -54,7 +54,8 @@ setup(name='chistributed',
       install_requires = [ "pyzmq >= 15.2.0",
                            "tornado >= 4.3",
                            "click >= 5.1",
-                           "pyyaml >= 3.11"
+                           "pyyaml >= 3.11",
+                           "cmd2 >= 0.6.8"
                          ],
       setup_requires = [ "setuptools_git >= 1.0" ],
       include_package_data=True,
