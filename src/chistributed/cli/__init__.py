@@ -48,9 +48,9 @@ import traceback
 @click.option('--config-file', type=click.File('r'))
 @click.option('--verbose', '-v', is_flag=True)
 @click.option('--debug', is_flag=True)
-@click.argument('script_file', type=str, default=None)
+@click.option('--run', type=str)
 @click.version_option(version=RELEASE)
-def chistributed_cmd(config_file, config, verbose, debug, script_file):
+def chistributed_cmd(config_file, config, verbose, debug, run):
     log.init_logging(verbose, debug)
 
     config_overrides = {}
@@ -91,8 +91,8 @@ def chistributed_cmd(config_file, config, verbose, debug, script_file):
     
     try:            
         if backend.running:
-            if script_file is not None:
-                interpreter.do_load(script_file)            
+            if run is not None:
+                interpreter.do_load(run)            
             
             # Call _cmdloop instead of cmdloop to prevent cmd2 from
             # trying to parse command-line arguments
