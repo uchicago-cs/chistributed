@@ -1,7 +1,0 @@
-# this demonstrates simple capabilities
-start test
-send {"destination": ["test"], "foo": "bar", "type": "spam"}
-get test foo
-send {"destination": ["test"], "bar": "baz", "type": "spam"}
-set foo 42
-get foo
