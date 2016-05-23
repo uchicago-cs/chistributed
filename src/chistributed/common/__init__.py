@@ -43,7 +43,8 @@ class ChistributedException(Exception):
             self.traceback = None
 
     def print_exception(self):
-        print self.traceback
+        if self.traceback is not None:
+            print self.traceback
         
 def handle_unexpected_exception():
     print "ERROR: Unexpected exception"

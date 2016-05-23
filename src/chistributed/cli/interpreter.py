@@ -31,6 +31,7 @@ import cmd2
 from cmd2 import options
 from optparse import make_option
 from chistributed.core.model import Node
+from chistributed.common import ChistributedException
 
 class Interpreter(cmd2.Cmd):
     prompt = "> "
@@ -56,10 +57,14 @@ class Interpreter(cmd2.Cmd):
         for p in peers:
             node_opts += ["--peer", p]            
         
-        self.ds.start_node(node_id, node_opts)
-        
-        if not opts.no_wait:
-            self.ds.nodes[node_id].wait_for_state(Node.STATE_RUNNING)
+        try:
+            self.ds.start_node(node_id, node_opts)
+            
+            if not opts.no_wait:
+                self.ds.nodes[node_id].wait_for_state(Node.STATE_RUNNING)
+        except ChistributedException, ce:
+            print "Error when starting node %s: %s" % (node_id, ce.message)
+            
 
 
     @options([make_option('-n', '--node_id', type="string"),

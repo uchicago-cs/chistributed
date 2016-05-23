@@ -6,6 +6,7 @@ import subprocess
 import zmq
 from zmq.eventloop import ioloop, zmqstream
 import os
+from chistributed.common import ChistributedException
 ioloop.install()
 
 from chistributed.core.model import SetRequestMessage, Node, CustomMessage,\
@@ -155,11 +156,6 @@ class ZMQBackend:
                  '--router-endpoint', self.router_endpoint]
         
         args += extra_params
-
-        # TODO: Make output redirection configurable
-        #if not hasattr(self, "devnull"):
-        #    self.devnull = open(os.devnull, "w")
-        #proc = subprocess.Popen(args, shell=True, stdout=self.devnull, stderr=self.devnull)
         
         if self.debug:
             stdout = None
@@ -170,8 +166,11 @@ class ZMQBackend:
             stdout = self.devnull
             stderr = self.devnull
             
-        proc = subprocess.Popen(args, stdout = stdout, stderr = stderr)
-        self.node_pids[node_id] = proc
+        try:
+            proc = subprocess.Popen(args, stdout = stdout, stderr = stderr)
+            self.node_pids[node_id] = proc
+        except OSError, ose:
+            raise ChistributedException("Could not start node process. Tried to run '%s'" % " ".join(args), original_exception = ose)
 
         # Send hello
         self.loop.add_callback(self.__hello_callback(node_id))
@@ -262,6 +261,11 @@ class ZMQBackend:
                     tries_left -= 1
                     if tries_left > 0:
                         self.loop.add_timeout(self.loop.time() + 1, hello_sender, tries_left = tries_left)
+            
+                if tries_left == 0:
+                    log.warning("Node %s did not respond to hello message" % node_id)
+                    self.ds.nodes[node_id].set_state(Node.STATE_FAILED)
+                    
             
             self.loop.add_timeout(self.loop.time() + 0.5, hello_sender, tries_left = 5)
             
