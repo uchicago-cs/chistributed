@@ -32,14 +32,12 @@ import yaml
 from chistributed.common import ChistributedException
 
 
-class Config(object):
-
-    DEFAULT_CONFIG_FILENAME = "chistributed.conf"
-    
+class Config(object):    
     OPTION_NODE_EXECUTABLE = "node-executable"
     OPTION_NODES = "nodes"
     
     VALID_OPTIONS = [OPTION_NODE_EXECUTABLE, OPTION_NODES]
+    REQUIRED_OPTIONS = [OPTION_NODE_EXECUTABLE, OPTION_NODES]
 
     @staticmethod
     def get_config_file_values(config_file):
@@ -55,17 +53,16 @@ class Config(object):
         return config_file_values
 
     @classmethod
-    def get_config(cls, config_file = None, config_overrides = {}):
+    def get_config(cls, config_file, config_overrides = {}):
         config = {}
-       
-        if config_file is None:
-            config_file = Config.DEFAULT_CONFIG_FILENAME
                 
         config_values = cls.get_config_file_values(config_file)
         config.update(config_values)
         config.update(config_overrides)
                 
-        # TODO: Check for configuration values
+        for o in Config.REQUIRED_OPTIONS:
+            if o not in config:
+                raise ChistributedException("Configuration file %s does not include required option %s" % (config_file, o)) 
         
         return cls(config)
 

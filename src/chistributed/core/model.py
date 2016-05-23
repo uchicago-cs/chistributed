@@ -102,6 +102,13 @@ class Node(object):
     STATE_STARTING = 1
     STATE_RUNNING = 2
     STATE_STOPPED = 3
+    STATE_FAILED = 4
+    
+    state_str = {STATE_INIT: "Initial",
+                 STATE_STARTING: "Starting",
+                 STATE_RUNNING: "Running",
+                 STATE_STOPPED: "Stopped",
+                 STATE_FAILED: "Failed"}
     
     def __init__(self, node_id):
         self.node_id = node_id
@@ -112,9 +119,12 @@ class Node(object):
         
     def wait_for_state(self, state):
         self.cv.acquire()
-        while self.state != state:
+        while self.state not in (state, Node.STATE_FAILED):
             self.cv.wait()
         self.cv.release()
+        
+        if self.state != state:
+            raise ChistributedException("Node entered failed state while waiting for state %s" % Node.state_str[state])
         
     def set_state(self, state):
         self.cv.acquire()

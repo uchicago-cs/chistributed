@@ -33,10 +33,12 @@ import click
 import signal
 import threading
 import sys
+import os.path
 
 from chistributed import RELEASE
 import chistributed.common.log as log
-from chistributed.common import CHISTRIBUTED_FAIL, CHISTRIBUTED_SUCCESS
+from chistributed.common import CHISTRIBUTED_FAIL, CHISTRIBUTED_SUCCESS,\
+    ChistributedException
 from chistributed.common.config import Config
 from chistributed.backends.zmq import ZMQBackend
 from chistributed.cli.interpreter import Interpreter
@@ -45,7 +47,7 @@ import traceback
 
 @click.command(name="chistributed")
 @click.option('--config', '-c', type=str, multiple=True)
-@click.option('--config-file', type=click.File('r'))
+@click.option('--config-file', type=str)
 @click.option('--verbose', '-v', is_flag=True)
 @click.option('--debug', is_flag=True)
 @click.option('--run', type=str)
@@ -53,58 +55,73 @@ import traceback
 def chistributed_cmd(config_file, config, verbose, debug, run):
     log.init_logging(verbose, debug)
 
-    config_overrides = {}
-    for c in config:
-        if c.count("=") != 1 or c[0] == "=" or c[-1] == "=":
-            raise click.BadParameter("Invalid configuration parameter: {}".format(c))
-        else:
-            k, v = c.split("=")
-            config_overrides[k] = v
-
-    config_obj = Config.get_config(config_file, config_overrides)
-
-    backend = ZMQBackend(config_obj.get_node_executable(), 'tcp://127.0.0.1:23310', 'tcp://127.0.0.1:23311', debug = debug)
+    try:
+        config_overrides = {}
+        for c in config:
+            if c.count("=") != 1 or c[0] == "=" or c[-1] == "=":
+                raise click.BadParameter("Invalid configuration parameter: {}".format(c))
+            else:
+                k, v = c.split("=")
+                config_overrides[k] = v
     
-    ds = DistributedSystem(backend, config_obj.get_nodes())
-
-    interpreter = Interpreter(ds)
+        if config_file is None:
+            config_file = "chistributed.conf"
+                    
+        if not os.path.exists(config_file):
+            raise click.BadParameter("Configuration file (%s) does not exist." % config_file)
     
-    # Run broker in separate thread
-    def backend_thread():
-        backend.start()                
-
-    t = threading.Thread(target=backend_thread)
-    t.daemon = True
-    t.start()    
-
-    def signal_handler(signal, frame):
-        print('SIGINT received')
+        config_obj = Config.get_config(config_file, config_overrides)
+    
+        backend = ZMQBackend(config_obj.get_node_executable(), 'tcp://127.0.0.1:23310', 'tcp://127.0.0.1:23311', debug = debug)
+        
+        ds = DistributedSystem(backend, config_obj.get_nodes())
+    
+        interpreter = Interpreter(ds)
+        
+        # Run broker in separate thread
+        def backend_thread():
+            backend.start()                
+    
+        t = threading.Thread(target=backend_thread)
+        t.daemon = True
+        t.start()    
+    
+        def signal_handler(signal, frame):
+            print('SIGINT received')
+            backend.stop()
+            
+            t.join()
+    
+            interpreter.do_quit(None)
+            
+            sys.exit(1)
+                    
+        signal.signal(signal.SIGINT, signal_handler)
+        
+        try:            
+            if backend.running:
+                if run is not None:
+                    interpreter.do_load(run)            
+                
+                # Call _cmdloop instead of cmdloop to prevent cmd2 from
+                # trying to parse command-line arguments
+                interpreter._cmdloop()
+        except Exception, e:
+            print "ERROR: Unexpected exception %s" % (e)
+            if debug:
+                print traceback.format_exc()
+            interpreter.do_quit(None)
+        
         backend.stop()
         
         t.join()
-
-        interpreter.do_quit(None)
-        
-        sys.exit(1)
-                
-    signal.signal(signal.SIGINT, signal_handler)
-    
-    try:            
-        if backend.running:
-            if run is not None:
-                interpreter.do_load(run)            
-            
-            # Call _cmdloop instead of cmdloop to prevent cmd2 from
-            # trying to parse command-line arguments
-            interpreter._cmdloop()
+    except ChistributedException, ce:
+        print "ERROR: %s" % ce.message
+        if debug:
+            ce.print_exception()
+        sys.exit(-1)
     except Exception, e:
         print "ERROR: Unexpected exception %s" % (e)
-        if debug:
-            print traceback.format_exc()
-        interpreter.do_quit(None)
-    
-    backend.stop()
-    
-    t.join()
+        sys.exit(-1)
 
     return CHISTRIBUTED_SUCCESS
