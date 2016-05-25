@@ -229,7 +229,7 @@ class ZMQBackend:
             
             msg = zmq_msg.to_msg()
             if msg is not None:
-                self.ds.process_message(msg)
+                self.ds.process_message(msg, source = self.zid_node.get(msg_frames[0]))
                 
     def send_message(self, node_id, msg):
         zmq_msg = ZMQMessage.from_msg(msg)
