@@ -28,6 +28,8 @@
 #  ARISING IN ANY WAY OUT OF THE USE 
 
 import cmd2
+import time
+
 from cmd2 import options
 from optparse import make_option
 from chistributed.core.model import Node
@@ -96,6 +98,12 @@ class Interpreter(cmd2.Cmd):
         self.ds.send_set_msg(node_id, opts.key, opts.value)        
         
         
+    @options([make_option('-t', '--time', type="float")
+             ])
+    def do_wait(self, args, opts=None):
+        time.sleep(opts.time)
+
+
     @options([make_option('-n', '--node_id', type="string")
              ])          
     def do_fail_node(self, args, opts=None):
