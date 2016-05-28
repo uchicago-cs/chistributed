@@ -9,9 +9,7 @@ import os
 from chistributed.common import ChistributedException
 ioloop.install()
 
-from chistributed.core.model import SetRequestMessage, Node, CustomMessage,\
-    SetResponseErrorMessage, GetResponseErrorMessage, SetResponseOKMessage,\
-    GetResponseOKMessage, GetRequestMessage
+from chistributed.core.model import SetRequestMessage, Node, CustomMessage, GetRequestMessage, Message
 import chistributed.common.log as log
 
 
@@ -34,23 +32,7 @@ class ZMQMessage(dict):
         return frames
             
     def to_msg(self):
-        if self["type"] == "set":
-            pass
-        elif self["type"] == "setResponse":
-            if "error" in self:
-                return SetResponseErrorMessage(self["id"], self["error"])
-            else:
-                return SetResponseOKMessage(self["id"], self["key"], self["value"])                
-        elif self["type"] == "get":
-            pass
-        elif self["type"] == "getResponse":
-            if "error" in self:
-                return GetResponseErrorMessage(self["id"], self["error"])
-            else:
-                return GetResponseOKMessage(self["id"], self["key"], self["value"])                
-        else:
-            return CustomMessage(self["type"], self["destination"], self)
-            
+        return Message.from_dict(self.fields)            
             
     @classmethod
     def from_msg(cls, msg):

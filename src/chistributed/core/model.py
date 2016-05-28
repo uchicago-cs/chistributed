@@ -31,6 +31,8 @@ from collections import deque
 from threading import Lock, Condition
 
 import colorama
+import json
+
 import chistributed.common.log as log
 colorama.init()
 
@@ -41,6 +43,60 @@ class Message(object):
     def __init__(self, msg_type, description):
         self.msg_type = msg_type
         self.description = description
+        
+    @staticmethod
+    def from_json(s):
+        msg = json.loads(s)
+
+        if not isinstance(msg, dict):
+            raise ChistributedException("Not a valid message: %s" % s)
+
+        return Message.from_dict(msg)
+        
+    @staticmethod
+    def from_dict(msg):        
+        def check_field(d, f):
+            if not f in d:
+                raise ChistributedException("Message does not have '%s' field: %s" % (f, msg))
+        
+        check_field(msg, "type")
+        
+        if msg["type"] in ("get", "set"): 
+            check_field(msg, "destination")
+            check_field(msg, "key")
+
+        if msg["type"] == "set": 
+            check_field(msg, "value")
+
+        if msg["type"] in ("get", "getResponse", "set", "setResponse"): 
+            check_field(msg, "id")
+            
+        if msg["type"] in ("getResponse", "setResponse"):
+            if not (("key" in msg and "value" in msg) or ("error" in msg)):
+                raise ChistributedException("set/get response does not have error or key/value fields: %s" % msg)
+                
+            if "error" in msg and "key" in msg and "value" in msg:
+                raise ChistributedException("set/get response has both error and key/value fields: %s" % msg)
+            
+        if msg["type"] not in ("get", "getResponse", "set", "setResponse"):
+            check_field(msg, "destination")
+                  
+        if msg["type"] == "get":
+            return GetRequestMessage(msg["destination"], msg["id"], msg["key"])
+        elif msg["type"] == "set":
+            return SetRequestMessage(msg["destination"], msg["id"], msg["key"], msg["value"])
+        elif msg["type"] == "getResponse" and ("key" in msg and "value" in msg):
+            return GetResponseOKMessage(msg["id"], msg["key"], msg["value"])
+        elif msg["type"] == "getResponse" and "error" in msg:
+            return GetResponseErrorMessage(msg["id"], msg["error"])
+        elif msg["type"] == "setResponse" and ("key" in msg and "value" in msg):
+            return SetResponseOKMessage(msg["id"], msg["key"], msg["value"])
+        elif msg["type"] == "setResponse" and "error" in msg:
+            return SetResponseErrorMessage(msg["id"], msg["error"])
+        else:
+            return CustomMessage(msg["type"], msg["destination"], msg)
+            
+        
 
 class GetRequestMessage(Message):
     def __init__(self, destination, msg_id, key):
@@ -138,6 +194,7 @@ class Node(object):
         self.cv.notify_all()
         self.cv.release()        
 
+
 class Partition(object):
     def __init__(self, name, nodes1, nodes2):
         self.name = name
@@ -146,6 +203,7 @@ class Partition(object):
         
     def are_partitioned(self, node1, node2):
         return (node1 in self.nodes1 and node2 in self.nodes2) or (node2 in self.nodes1 and node1 in self.nodes2) 
+
 
 class DistributedSystem(object):
     
