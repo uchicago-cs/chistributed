@@ -1,7 +1,6 @@
 import java.util.List;
 
 import com.google.gson.Gson;
-import com.google.gson.annotations.SerializedName;
 
 /**
  * Represents a message that can be passed between two nodes in the Chistributed
