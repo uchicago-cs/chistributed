@@ -101,8 +101,7 @@ public abstract class ChiNode {
 
 		// We don't strictly need a message handler for the REQ socket,
 		// but we define one in case we ever receive any errors through it.
-		ZMQ.PollItem req = new ZMQ.PollItem(reqSock, ZMQ.Poller.POLLOUT
-				| ZMQ.Poller.POLLERR);
+		ZMQ.PollItem req = new ZMQ.PollItem(reqSock, ZMQ.Poller.POLLIN);
 		OutgoingMessageHandler outgoingMessageHandler = new OutgoingMessageHandler();
 		loop.addPoller(req, outgoingMessageHandler, this);
 
