@@ -28,9 +28,11 @@
 #  ARISING IN ANY WAY OUT OF THE USE 
 
 import cmd2
+import time
+
 from cmd2 import options
 from optparse import make_option
-from chistributed.core.model import Node
+from chistributed.core.model import Node, Message
 from chistributed.common import ChistributedException
 
 class Interpreter(cmd2.Cmd):
@@ -96,6 +98,12 @@ class Interpreter(cmd2.Cmd):
         self.ds.send_set_msg(node_id, opts.key, opts.value)        
         
         
+    @options([make_option('-t', '--time', type="float")
+             ])
+    def do_wait(self, args, opts=None):
+        time.sleep(opts.time)
+
+
     @options([make_option('-n', '--node_id', type="string")
              ])          
     def do_fail_node(self, args, opts=None):
@@ -160,7 +168,13 @@ class Interpreter(cmd2.Cmd):
             print "There is no partition with this name: %s" % (name)
             return             
                 
-        self.ds.remove_partition(name, opts.deliver)            
+        self.ds.remove_partition(name, opts.deliver)        
+        
+    
+    def do_send_msg(self, s):
+        msg = Message.from_json(s)
+        self.ds.backend.send_message(msg.destination, msg)
+
                 
         
     @options([make_option('-v', '--verbose', action="store_true")
