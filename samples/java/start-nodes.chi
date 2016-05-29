@@ -1,0 +1,4 @@
+start -n node-1
+start -n node-2
+start -n node-3
+start -n node-4
