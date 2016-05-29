@@ -50,9 +50,10 @@ import traceback
 @click.option('--config-file', type=str)
 @click.option('--verbose', '-v', is_flag=True)
 @click.option('--debug', is_flag=True)
+@click.option('--show-node-output', is_flag=True)
 @click.option('--run', type=str)
 @click.version_option(version=RELEASE)
-def chistributed_cmd(config_file, config, verbose, debug, run):
+def chistributed_cmd(config_file, config, verbose, debug, show_node_output, run):
     log.init_logging(verbose, debug)
 
     try:
@@ -72,7 +73,7 @@ def chistributed_cmd(config_file, config, verbose, debug, run):
     
         config_obj = Config.get_config(config_file, config_overrides)
     
-        backend = ZMQBackend(config_obj.get_node_executable(), 'tcp://127.0.0.1:23310', 'tcp://127.0.0.1:23311', debug = debug)
+        backend = ZMQBackend(config_obj.get_node_executable(), 'tcp://127.0.0.1:23310', 'tcp://127.0.0.1:23311', debug = debug, show_node_output = show_node_output)
         
         ds = DistributedSystem(backend, config_obj.get_nodes())
     
