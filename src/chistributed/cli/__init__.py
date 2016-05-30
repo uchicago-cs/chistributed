@@ -48,12 +48,14 @@ import traceback
 @click.command(name="chistributed")
 @click.option('--config', '-c', type=str, multiple=True)
 @click.option('--config-file', type=str)
+@click.option('--pub-port', type=int, default=23310)
+@click.option('--router-port', type=int, default=23311)
 @click.option('--verbose', '-v', is_flag=True)
 @click.option('--debug', is_flag=True)
 @click.option('--show-node-output', is_flag=True)
 @click.option('--run', type=str)
 @click.version_option(version=RELEASE)
-def chistributed_cmd(config_file, config, verbose, debug, show_node_output, run):
+def chistributed_cmd(config, config_file, pub_port, router_port, verbose, debug, show_node_output, run):
     log.init_logging(verbose, debug)
 
     try:
@@ -73,7 +75,10 @@ def chistributed_cmd(config_file, config, verbose, debug, show_node_output, run)
     
         config_obj = Config.get_config(config_file, config_overrides)
     
-        backend = ZMQBackend(config_obj.get_node_executable(), 'tcp://127.0.0.1:23310', 'tcp://127.0.0.1:23311', debug = debug, show_node_output = show_node_output)
+        pub_endpoint = 'tcp://127.0.0.1:%i' % pub_port
+        router_endpoint = 'tcp://127.0.0.1:%i' % router_port
+    
+        backend = ZMQBackend(config_obj.get_node_executable(), pub_endpoint, router_endpoint, debug = debug, show_node_output = show_node_output)
         
         ds = DistributedSystem(backend, config_obj.get_nodes())
     
