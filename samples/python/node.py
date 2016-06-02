@@ -89,7 +89,11 @@ class Node(object):
     def handle(self, msg_frames):
 
         # Unpack the message frames.
-        assert len(msg_frames) == 3
+        # in the event of a mismatch, format a nice string with msg_frames in
+        # the raw, for debug purposes
+        assert len(msg_frames) == 3, ((
+            "Multipart ZMQ message had wrong length. "
+            "Full message contents:\n{}").format(msg_frames))
         assert msg_frames[0] == self.name
         # Second field is the empty delimiter
         msg = json.loads(msg_frames[2])
