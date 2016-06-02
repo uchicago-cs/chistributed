@@ -57,7 +57,9 @@ class Interpreter(cmd2.Cmd):
         
         node_opts = []
         for p in peers:
-            node_opts += ["--peer", p]            
+            node_opts += ["--peer", p]    
+            
+        node_opts += args.split()
         
         try:
             self.ds.start_node(node_id, node_opts)
