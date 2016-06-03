@@ -107,11 +107,14 @@ def chistributed_cmd(config, config_file, pub_port, router_port, verbose, debug,
         try:            
             if backend.running:
                 if run is not None:
-                    interpreter.do_load(run)            
-                
-                # Call _cmdloop instead of cmdloop to prevent cmd2 from
-                # trying to parse command-line arguments
-                interpreter._cmdloop()
+                    stop = interpreter.do_load(run)
+                else:
+                    stop = False
+            
+                if not stop:
+                    # Call _cmdloop instead of cmdloop to prevent cmd2 from
+                    # trying to parse command-line arguments
+                    interpreter._cmdloop()
         except Exception, e:
             print "ERROR: Unexpected exception %s" % (e)
             if debug:
