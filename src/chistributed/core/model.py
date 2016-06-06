@@ -104,7 +104,7 @@ class GetRequestMessage(Message):
         
         self.destination = destination
         self.id = msg_id
-        self.key = key
+        self.key = key     
         
 class GetResponseOKMessage(Message):
     def __init__(self, msg_id, key, value):
@@ -128,7 +128,7 @@ class SetRequestMessage(Message):
         self.destination = destination
         self.id = msg_id
         self.key = key
-        self.value = value
+        self.value = value     
         
 class SetResponseOKMessage(Message):
     def __init__(self, msg_id, key, value):
@@ -221,8 +221,11 @@ class DistributedSystem(object):
         self.msg_queue = deque()
         self.msg_queue_lock = Lock()
         
-        self.pending_set_requests = {}
-        self.pending_get_requests = {}
+        self.pending_requests = {}
+        self.processed_requests = set()
+        
+        self.requests_cv_lock = Lock()
+        self.requests_cv = Condition(self.requests_cv_lock)   
         
         self.next_id = 1
         
@@ -240,11 +243,13 @@ class DistributedSystem(object):
 
         msg = SetRequestMessage(node_id, self.next_id, key, value)
         
-        self.pending_set_requests[self.next_id] = msg
+        self.pending_requests[self.next_id] = msg
         
         self.next_id += 1
         
         self.backend.send_message(node_id, msg)
+        
+        return msg.id
 
     def send_get_msg(self, node_id, key):
         if not node_id in self.nodes:
@@ -252,22 +257,37 @@ class DistributedSystem(object):
 
         msg = GetRequestMessage(node_id, self.next_id, key)
         
-        self.pending_get_requests[self.next_id] = msg
+        self.pending_requests[self.next_id] = msg
         
         self.next_id += 1
         
         self.backend.send_message(node_id, msg)
+        
+        return msg.id
+    
+    def wait_for_get_set_response(self, msg_id):
+        self.requests_cv_lock.acquire()
+        
+        if not msg_id in self.processed_requests and not msg_id in self.pending_requests:
+            self.requests_cv_lock.release()
+            raise ChistributedException("No such set/get request: %i" % msg_id)
+        
+        while msg_id not in self.processed_requests:
+            self.requests_cv.wait()
+        self.requests_cv_lock.release()        
         
     def process_message(self, msg, source):
         if source is not None and source not in self.nodes:
             raise ChistributedException("No such node: {}".format(source))
         
         if isinstance(msg, (GetResponseOKMessage, GetResponseErrorMessage, SetResponseOKMessage, SetResponseErrorMessage)):
+            self.requests_cv_lock.acquire()
+            
+            pending = self.pending_requests.get(msg.id, None)
+            
             if isinstance(msg, (GetResponseOKMessage, GetResponseErrorMessage)):
-                pending = self.pending_get_requests.get(msg.id, None)
                 msg_type = "GET"
             elif isinstance(msg, (SetResponseOKMessage, SetResponseErrorMessage)):
-                pending = self.pending_set_requests.get(msg.id, None)
                 msg_type = "SET"
                 
             if pending is None:
@@ -310,10 +330,13 @@ class DistributedSystem(object):
                         s += colorama.Style.RESET_ALL
                         print s
                         
-                if isinstance(msg, (GetResponseOKMessage, GetResponseErrorMessage)):
-                    del self.pending_get_requests[msg.id]
-                elif isinstance(msg, (SetResponseOKMessage, SetResponseErrorMessage)):
-                    del self.pending_set_requests[msg.id]                        
+                        
+                del self.pending_requests[msg.id]
+                self.processed_requests.add(msg.id)
+                self.requests_cv.notify_all()
+            
+            self.requests_cv.release()            
+                    
                             
         elif isinstance(msg, CustomMessage):
             msg.set_source(source)            

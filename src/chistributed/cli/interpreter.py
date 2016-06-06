@@ -73,7 +73,7 @@ class Interpreter(cmd2.Cmd):
 
     @options([make_option('-n', '--node_id', type="string"),
               make_option('-k', '--key', type="string"),
-              make_option('--no-wait', action="store_true")
+              make_option('--wait', action="store_true")
              ])          
     def do_get(self, args, opts=None):
         node_id = opts.node_id
@@ -82,13 +82,15 @@ class Interpreter(cmd2.Cmd):
             print "No such node: %s" % (node_id)
             return        
                 
-        self.ds.send_get_msg(node_id, opts.key)
+        msg_id = self.ds.send_get_msg(node_id, opts.key)
         
+        if opts.wait:
+            self.ds.wait_for_get_set_response(msg_id)
         
     @options([make_option('-n', '--node_id', type="string"),
               make_option('-k', '--key', type="string"),
               make_option('-v', '--value', type="string"),
-              make_option('--no-wait', action="store_true")
+              make_option('--wait', action="store_true")
              ])          
     def do_set(self, args, opts=None):
         node_id = opts.node_id
@@ -97,7 +99,10 @@ class Interpreter(cmd2.Cmd):
             print "No such node: %s" % (node_id)
             return        
                 
-        self.ds.send_set_msg(node_id, opts.key, opts.value)        
+        msg_id = self.ds.send_set_msg(node_id, opts.key, opts.value)        
+
+        if opts.wait:
+            self.ds.wait_for_get_set_response(msg_id)
         
         
     @options([make_option('-t', '--time', type="float")
