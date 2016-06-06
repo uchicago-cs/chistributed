@@ -44,9 +44,7 @@ class Node(object):
         self.name = node_name
         self.peer_names = peer_names
 
-        # For now, hardcode debug to true, since the broker currently
-        # doesn't send a --debug option.
-        self.debug = True
+        self.debug = debug
 
         # This node's data store
         self.store = {}

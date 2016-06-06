@@ -7,10 +7,8 @@ import com.beust.jcommander.Parameter;
  * Command-line parameters
  */
 public class CommandLineArgs {
-	// For now, hardcode debug to true, since the broker currently
-	// doesn't send a --debug option.
 	@Parameter(names = "--debug", description = "Debug mode")
-	public boolean debug = true;
+	public boolean debug;
 
 	@Parameter(names = "--pub-endpoint")
 	public String pubEndpoint;
