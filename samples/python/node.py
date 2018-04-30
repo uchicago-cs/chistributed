@@ -57,12 +57,12 @@ class Node(object):
     # Logging functions
     def log(self, msg):
         log_msg = ">>> %10s -- %s" % (self.name, msg)
-        print colorama.Style.BRIGHT + log_msg + colorama.Style.RESET_ALL
+        print(colorama.Style.BRIGHT + log_msg + colorama.Style.RESET_ALL)
 
     def log_debug(self, msg):
         if self.debug:
             log_msg = ">>> %10s -- %s" % (self.name, msg)
-            print colorama.Fore.BLUE + log_msg + colorama.Style.RESET_ALL
+            print(colorama.Fore.BLUE + log_msg + colorama.Style.RESET_ALL)
 
 
     # Starts the ZeroMQ loop

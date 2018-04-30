@@ -1,5 +1,5 @@
 # Needed so we can import from the global "zmq" package
-from __future__ import absolute_import
+
 
 import json
 import subprocess
@@ -118,7 +118,7 @@ class ZMQBackend:
 
         self.loop.stop()
         
-        node_ids = self.node_pids.keys()
+        node_ids = list(self.node_pids.keys())
         
         for node_id in node_ids:
             self.stop_node(node_id)    
@@ -155,7 +155,7 @@ class ZMQBackend:
         try:
             proc = subprocess.Popen(args, stdout = stdout, stderr = stderr)
             self.node_pids[node_id] = proc
-        except OSError, ose:
+        except OSError as ose:
             raise ChistributedException("Could not start node process. Tried to run '%s'" % " ".join(args), original_exception = ose)
 
         # Send hello

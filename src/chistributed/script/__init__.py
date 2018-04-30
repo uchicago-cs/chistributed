@@ -8,7 +8,7 @@ def plain(cmd):
     return c
   return plain_
 
-make_start, make_stop, make_get, make_set, make_drop, make_delay, make_tamper, make_join = map(plain, "start stop get set drop delay tamper join".split())
+make_start, make_stop, make_get, make_set, make_drop, make_delay, make_tamper, make_join = list(map(plain, "start stop get set drop delay tamper join".split()))
 
 _send = plain("send")
 def make_send(tokens):
@@ -25,7 +25,7 @@ def make_after(tokens):
 _split = plain("split")
 def make_split(tokens):
   c = _split(tokens)
-  c['nodes'] = filter(len, map(str.strip, tokens.nodes.replace(" ", ",").split(",")))
+  c['nodes'] = list(filter(len, list(map(str.strip, tokens.nodes.replace(" ", ",").split(",")))))
   return c
 
 ## Grammar
@@ -35,10 +35,9 @@ ParserElement.verbose_stacktrace = True
 
 EOL = LineEnd().suppress()
 comment = (LineStart() + "#" + restOfLine + EOL) | ("#" + restOfLine)
-LBRACE, RBRACE, = map(lambda x: Literal(x).suppress(), "{}")
+LBRACE, RBRACE, = [Literal(x).suppress() for x in "{}"]
 
-name, key, value = map(lambda x: Word(alphanums)(x),
-    ["name", "key", "value"])
+name, key, value = [Word(alphanums)(x) for x in ["name", "key", "value"]]
 
 params = restOfLine("params")
 _json = restOfLine("json")
@@ -46,8 +45,7 @@ _json = restOfLine("json")
 count = Word(nums)("count").setParseAction(lambda x: int(x[0]))
 # count = OneOrMore(nums)("count")
 
-start, stop, get, set, send, drop, delay, tamper, after, split, join, to_, from_, by_ = map(lambda x: Keyword(x),
-    "start stop get set send drop delay tamper after split join to from by".split())
+start, stop, get, set, send, drop, delay, tamper, after, split, join, to_, from_, by_ = [Keyword(x) for x in "start stop get set send drop delay tamper after split join to from by".split()]
 to_ = to_("to").setParseAction(lambda x: True)
 from_ = from_("from").setParseAction(lambda x: True)
 

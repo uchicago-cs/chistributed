@@ -115,22 +115,22 @@ def chistributed_cmd(config, config_file, pub_port, router_port, verbose, debug,
                     # Call _cmdloop instead of cmdloop to prevent cmd2 from
                     # trying to parse command-line arguments
                     interpreter._cmdloop()
-        except Exception, e:
-            print "ERROR: Unexpected exception %s" % (e)
+        except Exception as e:
+            print("ERROR: Unexpected exception %s" % (e))
             if debug:
-                print traceback.format_exc()
+                print(traceback.format_exc())
             interpreter.do_quit(None)
         
         backend.stop()
         
         t.join()
-    except ChistributedException, ce:
-        print "ERROR: %s" % ce.message
+    except ChistributedException as ce:
+        print("ERROR: %s" % ce.message)
         if debug:
             ce.print_exception()
         sys.exit(-1)
-    except Exception, e:
-        print "ERROR: Unexpected exception %s" % (e)
+    except Exception as e:
+        print("ERROR: Unexpected exception %s" % (e))
         sys.exit(-1)
 
     return CHISTRIBUTED_SUCCESS
