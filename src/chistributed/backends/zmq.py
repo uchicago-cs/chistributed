@@ -1,5 +1,5 @@
 # Needed so we can import from the global "zmq" package
-from __future__ import absolute_import
+
 
 import json
 import subprocess
@@ -26,9 +26,9 @@ class ZMQMessage(dict):
             
     def to_frames(self):
         frames = []
-        frames.append(bytes(self.identity))
-        frames.append("")
-        frames.append(json.dumps(self))
+        frames.append(self.identity.encode())
+        frames.append("".encode())
+        frames.append(json.dumps(self).encode())
         return frames
             
     def to_msg(self):
@@ -58,7 +58,7 @@ class ZMQMessage(dict):
         assert isinstance(zmq_message_frames, list)
         assert len(zmq_message_frames) == 3
         
-        fields = json.loads(zmq_message_frames[2])
+        fields = json.loads(str(zmq_message_frames[2], "utf-8"))
         
         return cls(zmq_message_frames[0], fields, zmq_message_frames[2])
         
@@ -90,7 +90,7 @@ class ZMQBackend:
         # And from ZID to node name
         self.zid_node = {}
         
-        # Maps node names to OS PIDs for stopping
+        # Maps node names to Popen objects for process management
         self.node_pids = {}
 
         self.debug = debug
@@ -111,6 +111,7 @@ class ZMQBackend:
         '''
         log.info('Starting broker')
         self.loop.start()
+        log.debug('Exited broker IOLoop')
         
     def stop(self):
         log.info('Stopping broker')
@@ -118,7 +119,7 @@ class ZMQBackend:
 
         self.loop.stop()
         
-        node_ids = self.node_pids.keys()
+        node_ids = list(self.node_pids.keys())
         
         for node_id in node_ids:
             self.stop_node(node_id)    
@@ -155,7 +156,7 @@ class ZMQBackend:
         try:
             proc = subprocess.Popen(args, stdout = stdout, stderr = stderr)
             self.node_pids[node_id] = proc
-        except OSError, ose:
+        except OSError as ose:
             raise ChistributedException("Could not start node process. Tried to run '%s'" % " ".join(args), original_exception = ose)
 
         # Send hello
@@ -170,9 +171,15 @@ class ZMQBackend:
         risky business.
         '''
         log.info("Stopping node " + node_id)
-        self.node_pids[node_id].terminate()
-        del self.node_pids[node_id]
-        pass        
+        
+        rc = self.node_pids[node_id].poll()
+        if rc is not None:
+            rc = self.node_pids[node_id].wait()
+            log.warning("Node {} had already exited (rc = {})".format(node_id, rc))
+        else:
+            self.node_pids[node_id].terminate()
+            
+        del self.node_pids[node_id]        
                     
 
     def receive_message(self, msg_frames):
@@ -203,15 +210,15 @@ class ZMQBackend:
             self.ds.nodes[node_name].set_state(Node.STATE_RUNNING)
 
             self.router.send_multipart([zmq_msg.identity,
-                                        "",
-                                        json.dumps({"type": "ack", "original": zmq_msg.fields})])
+                                        "".encode(),
+                                        json.dumps({"type": "ack", "original": zmq_msg.fields}).encode()])
 
         elif zmq_msg["type"] == "log":
             pass
         else:
             self.router.send_multipart([zmq_msg.identity,
-                                        "",
-                                        json.dumps({"type": "ack", "original": zmq_msg.fields})])            
+                                        "".encode(),
+                                        json.dumps({"type": "ack", "original": zmq_msg.fields}).encode()])
             
             msg = zmq_msg.to_msg()
             if msg is not None:
@@ -250,7 +257,15 @@ class ZMQBackend:
             
                 if tries_left == 0:
                     log.warning("Node %s did not respond to hello message" % node_id)
-                    self.ds.nodes[node_id].set_state(Node.STATE_FAILED)
+                    
+                    # Check whether the node has died
+                    rc = self.node_pids[node_id].poll()
+                    if rc is not None:
+                        self.ds.nodes[node_id].set_state(Node.STATE_CRASHED)
+                        log.warning("Node %s has crashed (rc = %i)" % (node_id, rc))
+                        self.loop.stop()
+                    else:
+                        self.ds.nodes[node_id].set_state(Node.STATE_FAILED)
                     
             
             self.loop.add_timeout(self.loop.time() + 0.5, hello_sender, tries_left = 5)

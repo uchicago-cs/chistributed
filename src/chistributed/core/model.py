@@ -104,7 +104,7 @@ class GetRequestMessage(Message):
         
         self.destination = destination
         self.id = msg_id
-        self.key = key
+        self.key = key     
         
 class GetResponseOKMessage(Message):
     def __init__(self, msg_id, key, value):
@@ -128,7 +128,7 @@ class SetRequestMessage(Message):
         self.destination = destination
         self.id = msg_id
         self.key = key
-        self.value = value
+        self.value = value     
         
 class SetResponseOKMessage(Message):
     def __init__(self, msg_id, key, value):
@@ -165,12 +165,14 @@ class Node(object):
     STATE_STOPPED = 3
     STATE_PARTITIONED = 4
     STATE_FAILED = 5
+    STATE_CRASHED = 6    
     
     state_str = {STATE_INIT: "Initial",
                  STATE_STARTING: "Starting",
                  STATE_RUNNING: "Running",
                  STATE_STOPPED: "Stopped",
-                 STATE_FAILED: "Failed"}
+                 STATE_FAILED: "Failed",
+                 STATE_CRASHED: "Crashed"}
     
     def __init__(self, node_id):
         self.node_id = node_id
@@ -181,12 +183,12 @@ class Node(object):
         
     def wait_for_state(self, state):
         self.cv.acquire()
-        while self.state not in (state, Node.STATE_FAILED):
+        while self.state not in (state, Node.STATE_FAILED, Node.STATE_CRASHED):
             self.cv.wait()
         self.cv.release()
         
         if self.state != state:
-            raise ChistributedException("Node entered failed state while waiting for state %s" % Node.state_str[state])
+            log.warning("Node entered {} state while waiting for state {}".format( Node.state_str[self.state], Node.state_str[state]))
         
     def set_state(self, state):
         self.cv.acquire()
@@ -221,8 +223,11 @@ class DistributedSystem(object):
         self.msg_queue = deque()
         self.msg_queue_lock = Lock()
         
-        self.pending_set_requests = {}
-        self.pending_get_requests = {}
+        self.pending_requests = {}
+        self.processed_requests = set()
+        
+        self.requests_cv_lock = Lock()
+        self.requests_cv = Condition(self.requests_cv_lock)   
         
         self.next_id = 1
         
@@ -240,11 +245,13 @@ class DistributedSystem(object):
 
         msg = SetRequestMessage(node_id, self.next_id, key, value)
         
-        self.pending_set_requests[self.next_id] = msg
+        self.pending_requests[self.next_id] = msg
         
         self.next_id += 1
         
         self.backend.send_message(node_id, msg)
+        
+        return msg.id
 
     def send_get_msg(self, node_id, key):
         if not node_id in self.nodes:
@@ -252,68 +259,86 @@ class DistributedSystem(object):
 
         msg = GetRequestMessage(node_id, self.next_id, key)
         
-        self.pending_get_requests[self.next_id] = msg
+        self.pending_requests[self.next_id] = msg
         
         self.next_id += 1
         
         self.backend.send_message(node_id, msg)
+        
+        return msg.id
+    
+    def wait_for_get_set_response(self, msg_id):
+        self.requests_cv_lock.acquire()
+        
+        if not msg_id in self.processed_requests and not msg_id in self.pending_requests:
+            self.requests_cv_lock.release()
+            raise ChistributedException("No such set/get request: %i" % msg_id)
+        
+        while msg_id not in self.processed_requests:
+            self.requests_cv.wait()
+        self.requests_cv_lock.release()        
         
     def process_message(self, msg, source):
         if source is not None and source not in self.nodes:
             raise ChistributedException("No such node: {}".format(source))
         
         if isinstance(msg, (GetResponseOKMessage, GetResponseErrorMessage, SetResponseOKMessage, SetResponseErrorMessage)):
+            self.requests_cv_lock.acquire()
+            
+            pending = self.pending_requests.get(msg.id, None)
+            
             if isinstance(msg, (GetResponseOKMessage, GetResponseErrorMessage)):
-                pending = self.pending_get_requests.get(msg.id, None)
                 msg_type = "GET"
             elif isinstance(msg, (SetResponseOKMessage, SetResponseErrorMessage)):
-                pending = self.pending_set_requests.get(msg.id, None)
                 msg_type = "SET"
                 
             if pending is None:
                 s = colorama.Style.BRIGHT + colorama.Fore.YELLOW
                 s += "WARNING: Received unexpected %s response id=%i" % (msg_type, msg.id)
                 s += colorama.Style.RESET_ALL
-                print s
+                print(s)
             else:
                 msg_name = "%s id=%s" % (msg_type, msg.id)
                 if isinstance(msg, GetResponseErrorMessage):
                     s = colorama.Style.BRIGHT + colorama.Fore.RED
                     s += "ERROR: %s failed (k=%s): %s" % (msg_name, pending.key, msg.error)
                     s += colorama.Style.RESET_ALL
-                    print s
+                    print(s)
                 elif isinstance(msg, SetResponseErrorMessage):
                     s = colorama.Style.BRIGHT + colorama.Fore.RED
                     s += "ERROR: %s failed (%s=%s): %s" % (msg_name, pending.key, pending.value, msg.error)
                     s += colorama.Style.RESET_ALL
-                    print s
+                    print(s)
                 elif isinstance(msg, GetResponseOKMessage):
                     if pending.key != msg.key:
                         s = colorama.Style.BRIGHT + colorama.Fore.YELLOW
                         s += "WARNING: %s response has unexpected key (got %s=%s, expected %s=%s" % (msg_name, msg.key, msg.value, pending.key, msg.value)
                         s += colorama.Style.RESET_ALL
-                        print s                    
+                        print(s)                    
                     else:
                         s = colorama.Style.BRIGHT + colorama.Fore.GREEN
                         s += "%s OK: %s = %s" % (msg_name, msg.key, msg.value)
                         s += colorama.Style.RESET_ALL
-                        print s
+                        print(s)
                 elif isinstance(msg, SetResponseOKMessage):
                     if pending.key != msg.key or pending.value != msg.value:
                         s = colorama.Style.BRIGHT + colorama.Fore.YELLOW
                         s += "WARNING: %s response has unexpected values (got %s=%s, expected %s=%s" % (msg_name, msg.key, msg.value, pending.key, pending.value)
                         s += colorama.Style.RESET_ALL
-                        print s                    
+                        print(s)                    
                     else:
                         s = colorama.Style.BRIGHT + colorama.Fore.GREEN
                         s += "%s OK: %s = %s" % (msg_name, msg.key, msg.value)
                         s += colorama.Style.RESET_ALL
-                        print s
+                        print(s)
                         
-                if isinstance(msg, (GetResponseOKMessage, GetResponseErrorMessage)):
-                    del self.pending_get_requests[msg.id]
-                elif isinstance(msg, (SetResponseOKMessage, SetResponseErrorMessage)):
-                    del self.pending_set_requests[msg.id]                        
+                        
+                del self.pending_requests[msg.id]
+                self.processed_requests.add(msg.id)
+                self.requests_cv.notify_all()
+            
+            self.requests_cv.release()            
+                    
                             
         elif isinstance(msg, CustomMessage):
             msg.set_source(source)            
@@ -412,7 +437,7 @@ class DistributedSystem(object):
                 dst_node = self.nodes[msg.destination]
                             
             deliver = True
-            for p in self.partitions.values():
+            for p in list(self.partitions.values()):
                 if p.are_partitioned(src_node, dst_node):
                     deliver = False
             

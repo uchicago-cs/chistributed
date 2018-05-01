@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -------------------------------------------------------------------------- #
-# Copyright (c) 2013-2014, The University of Chicago
+# Copyright (c) 2013-2018, The University of Chicago
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -32,7 +32,7 @@
 # -------------------------------------------------------------------------- #
 
 from ez_setup import use_setuptools
-use_setuptools()
+use_setuptools(version="3.1")
 from setuptools import setup, find_packages
 import sys
 
@@ -51,12 +51,12 @@ setup(name='chistributed',
       package_dir = {'': 'src'},
       packages=find_packages("src"),
 
-      install_requires = [ "pyzmq >= 15.2.0",
-                           "tornado >= 4.3",
+      install_requires = [ "pyzmq >= 17.0.0",
+                           "tornado >= 5.0.2",
                            "click >= 5.1",
                            "pyyaml >= 3.11",
-                           "cmd2 >= 0.6.8",
-                           "colorama >= 0.3.6"
+                           "cmd2 >= 0.8.5",
+                           "colorama >= 0.3.9"
                          ],
       setup_requires = [ "setuptools_git >= 1.0" ],
       include_package_data=True,
@@ -76,8 +76,8 @@ setup(name='chistributed',
           'Intended Audience :: Education',
           'License :: OSI Approved :: BSD License',
           'Operating System :: POSIX',
-          'Programming Language :: Python :: 2',
-          'Programming Language :: Python :: 2 :: Only',
+          'Programming Language :: Python :: 3',
+          'Programming Language :: Python :: 3 :: Only',
           'Topic :: Education'
           ]
      )

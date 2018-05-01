@@ -8,12 +8,7 @@ Note: These instructions have only been tested on UChicago CS machines. They
 should work in other UNIX environments, including Macs, but your mileage
 may vary.
 
-First, you will need to install the latest version of setuptools
-(the version on the CS machines is too old):
-
-    pip install --user setuptools --upgrade
-
-Next, clone chistributed into any directory you want:
+First, clone chistributed into any directory you want:
 
     git clone https://github.com/uchicago-cs/chistributed.git
 
