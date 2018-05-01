@@ -38,9 +38,10 @@ from chistributed.common import ChistributedException
 class Interpreter(cmd2.Cmd):
     prompt = "> "
     
-    def __init__(self, ds):
+    def __init__(self, ds, debug = False):
         self.ds = ds
         cmd2.Cmd.__init__(self)
+        self.debug = debug
     
     
     @options([make_option('-n', '--node_id', type="string"),

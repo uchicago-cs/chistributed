@@ -82,7 +82,7 @@ def chistributed_cmd(config, config_file, pub_port, router_port, verbose, debug,
         
         ds = DistributedSystem(backend, config_obj.get_nodes())
     
-        interpreter = Interpreter(ds)
+        interpreter = Interpreter(ds, debug = debug)
         
         # Run broker in separate thread
         def backend_thread():
