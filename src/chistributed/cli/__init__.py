@@ -125,7 +125,7 @@ def chistributed_cmd(config, config_file, pub_port, router_port, verbose, debug,
         
         t.join()
     except ChistributedException as ce:
-        print("ERROR: %s" % ce.message)
+        print("ERROR: %s" % ce)
         if debug:
             ce.print_exception()
         sys.exit(-1)

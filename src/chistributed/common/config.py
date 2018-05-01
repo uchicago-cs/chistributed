@@ -70,9 +70,18 @@ class Config(object):
         self.config_values = {opt:config_values.get(opt) for opt in Config.VALID_OPTIONS}
         
     def get_node_executable(self):
-        return self.config_values[Config.OPTION_NODE_EXECUTABLE]
+        v = self.config_values[Config.OPTION_NODE_EXECUTABLE]
+        
+        if v is None or len(v) == 0:
+            raise ChistributedException("Option {} must have a value".format(Config.OPTION_NODE_EXECUTABLE))
+        
+        return v 
     
     def get_nodes(self):
         nodes = self.config_values[Config.OPTION_NODES]
+
+        if nodes is None or len(nodes) == 0:
+            raise ChistributedException("Option {} must have a value".format(Config.OPTION_NODES))
+
         return nodes.split()
         
