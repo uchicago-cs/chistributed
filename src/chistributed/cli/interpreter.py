@@ -59,7 +59,7 @@ class Interpreter(cmd2.Cmd):
         for p in peers:
             node_opts += ["--peer", p]    
             
-        node_opts += args.split()
+        node_opts += args
         
         try:
             self.ds.start_node(node_id, node_opts)
@@ -67,7 +67,7 @@ class Interpreter(cmd2.Cmd):
             if not opts.no_wait:
                 self.ds.nodes[node_id].wait_for_state(Node.STATE_RUNNING)
         except ChistributedException as ce:
-            print("Error when starting node %s: %s" % (node_id, ce.message))
+            print("Error when starting node %s: %s" % (node_id, ce))
             
 
 
