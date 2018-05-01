@@ -50,7 +50,7 @@ class Interpreter(cmd2.Cmd):
         node_id = opts.node_id
         
         if node_id not in self.ds.nodes:
-            print "No such node: %s" % (node_id)
+            print("No such node: %s" % (node_id))
             return
         
         peers = [n for n in self.ds.nodes if n != node_id]
@@ -59,15 +59,15 @@ class Interpreter(cmd2.Cmd):
         for p in peers:
             node_opts += ["--peer", p]    
             
-        node_opts += args.split()
+        node_opts += args
         
         try:
             self.ds.start_node(node_id, node_opts)
             
             if not opts.no_wait:
                 self.ds.nodes[node_id].wait_for_state(Node.STATE_RUNNING)
-        except ChistributedException, ce:
-            print "Error when starting node %s: %s" % (node_id, ce.message)
+        except ChistributedException as ce:
+            print("Error when starting node %s: %s" % (node_id, ce))
             
 
 
@@ -79,7 +79,7 @@ class Interpreter(cmd2.Cmd):
         node_id = opts.node_id
         
         if node_id not in self.ds.nodes:
-            print "No such node: %s" % (node_id)
+            print("No such node: %s" % (node_id))
             return        
                 
         msg_id = self.ds.send_get_msg(node_id, opts.key)
@@ -96,7 +96,7 @@ class Interpreter(cmd2.Cmd):
         node_id = opts.node_id
         
         if node_id not in self.ds.nodes:
-            print "No such node: %s" % (node_id)
+            print("No such node: %s" % (node_id))
             return        
                 
         msg_id = self.ds.send_set_msg(node_id, opts.key, opts.value)        
@@ -117,7 +117,7 @@ class Interpreter(cmd2.Cmd):
         node_id = opts.node_id
         
         if node_id not in self.ds.nodes:
-            print "No such node: %s" % (node_id)
+            print("No such node: %s" % (node_id))
             return        
                 
         self.ds.fail_node(node_id)         
@@ -130,7 +130,7 @@ class Interpreter(cmd2.Cmd):
         node_id = opts.node_id
         
         if node_id not in self.ds.nodes:
-            print "No such node: %s" % (node_id)
+            print("No such node: %s" % (node_id))
             return        
                 
         self.ds.recover_node(node_id, opts.deliver)
@@ -144,13 +144,13 @@ class Interpreter(cmd2.Cmd):
         name = opts.name
         
         if name in self.ds.partitions:
-            print "There is already a partition with this name: %s" % (name)
+            print("There is already a partition with this name: %s" % (name))
             return        
             
         nodes1 = opts.partition.split(",")
         for n in nodes1:
             if n not in self.ds.nodes:
-                print "No such node: %s" % (n)
+                print("No such node: %s" % (n))
                 return        
         
         if len(opts.partition2) == 0:
@@ -159,7 +159,7 @@ class Interpreter(cmd2.Cmd):
             nodes2 = opts.partition2.split(",")
             for n in nodes2:
                 if n not in self.ds.nodes:
-                    print "No such node: %s" % (n)
+                    print("No such node: %s" % (n))
                     return            
                 
         self.ds.add_partition(name, nodes1, nodes2)    
@@ -172,7 +172,7 @@ class Interpreter(cmd2.Cmd):
         name = opts.name
         
         if not name in self.ds.partitions:
-            print "There is no partition with this name: %s" % (name)
+            print("There is no partition with this name: %s" % (name))
             return             
                 
         self.ds.remove_partition(name, opts.deliver)        
@@ -190,25 +190,25 @@ class Interpreter(cmd2.Cmd):
         self.ds.msg_queue_lock.acquire()
         
         if len(self.ds.msg_queue) == 0:
-            print "No messages in message queue."
+            print("No messages in message queue.")
         else:
             for msg in self.ds.msg_queue:
-                print "{} -> {}: {}".format(msg.source, msg.destination, msg.msg_type)
+                print("{} -> {}: {}".format(msg.source, msg.destination, msg.msg_type))
                 if opts.verbose:
-                    print msg.values
-                    print
+                    print(msg.values)
+                    print()
 
         self.ds.msg_queue_lock.release()
         
         
     @options([make_option('-f', '--include-failed-nodes', action="store_true")])  
     def do_show_partitions(self, args, opts=None):
-        for p in self.ds.partitions.values():
+        for p in list(self.ds.partitions.values()):
             if p.name.startswith("#fail-") and not opts.include_failed_nodes:
                 continue
             
-            print "Partition '%s'" % p.name
-            print "  Nodes 1: %s" % ", ".join([n.node_id for n in p.nodes1])    
-            print "  Nodes 2: %s" % ", ".join([n.node_id for n in p.nodes2])    
+            print("Partition '%s'" % p.name)
+            print("  Nodes 1: %s" % ", ".join([n.node_id for n in p.nodes1]))    
+            print("  Nodes 2: %s" % ", ".join([n.node_id for n in p.nodes2]))    
                  
         

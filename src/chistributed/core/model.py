@@ -294,41 +294,41 @@ class DistributedSystem(object):
                 s = colorama.Style.BRIGHT + colorama.Fore.YELLOW
                 s += "WARNING: Received unexpected %s response id=%i" % (msg_type, msg.id)
                 s += colorama.Style.RESET_ALL
-                print s
+                print(s)
             else:
                 msg_name = "%s id=%s" % (msg_type, msg.id)
                 if isinstance(msg, GetResponseErrorMessage):
                     s = colorama.Style.BRIGHT + colorama.Fore.RED
                     s += "ERROR: %s failed (k=%s): %s" % (msg_name, pending.key, msg.error)
                     s += colorama.Style.RESET_ALL
-                    print s
+                    print(s)
                 elif isinstance(msg, SetResponseErrorMessage):
                     s = colorama.Style.BRIGHT + colorama.Fore.RED
                     s += "ERROR: %s failed (%s=%s): %s" % (msg_name, pending.key, pending.value, msg.error)
                     s += colorama.Style.RESET_ALL
-                    print s
+                    print(s)
                 elif isinstance(msg, GetResponseOKMessage):
                     if pending.key != msg.key:
                         s = colorama.Style.BRIGHT + colorama.Fore.YELLOW
                         s += "WARNING: %s response has unexpected key (got %s=%s, expected %s=%s" % (msg_name, msg.key, msg.value, pending.key, msg.value)
                         s += colorama.Style.RESET_ALL
-                        print s                    
+                        print(s)                    
                     else:
                         s = colorama.Style.BRIGHT + colorama.Fore.GREEN
                         s += "%s OK: %s = %s" % (msg_name, msg.key, msg.value)
                         s += colorama.Style.RESET_ALL
-                        print s
+                        print(s)
                 elif isinstance(msg, SetResponseOKMessage):
                     if pending.key != msg.key or pending.value != msg.value:
                         s = colorama.Style.BRIGHT + colorama.Fore.YELLOW
                         s += "WARNING: %s response has unexpected values (got %s=%s, expected %s=%s" % (msg_name, msg.key, msg.value, pending.key, pending.value)
                         s += colorama.Style.RESET_ALL
-                        print s                    
+                        print(s)                    
                     else:
                         s = colorama.Style.BRIGHT + colorama.Fore.GREEN
                         s += "%s OK: %s = %s" % (msg_name, msg.key, msg.value)
                         s += colorama.Style.RESET_ALL
-                        print s
+                        print(s)
                         
                         
                 del self.pending_requests[msg.id]
@@ -435,7 +435,7 @@ class DistributedSystem(object):
                 dst_node = self.nodes[msg.destination]
                             
             deliver = True
-            for p in self.partitions.values():
+            for p in list(self.partitions.values()):
                 if p.are_partitioned(src_node, dst_node):
                     deliver = False
             
