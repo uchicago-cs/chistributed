@@ -90,7 +90,7 @@ class ZMQBackend:
         # And from ZID to node name
         self.zid_node = {}
         
-        # Maps node names to OS PIDs for stopping
+        # Maps node names to Popen objects for process management
         self.node_pids = {}
 
         self.debug = debug
@@ -111,6 +111,7 @@ class ZMQBackend:
         '''
         log.info('Starting broker')
         self.loop.start()
+        log.debug('Exited broker IOLoop')
         
     def stop(self):
         log.info('Stopping broker')
@@ -170,9 +171,15 @@ class ZMQBackend:
         risky business.
         '''
         log.info("Stopping node " + node_id)
-        self.node_pids[node_id].terminate()
-        del self.node_pids[node_id]
-        pass        
+        
+        rc = self.node_pids[node_id].poll()
+        if rc is not None:
+            rc = self.node_pids[node_id].wait()
+            log.warning("Node {} had already exited (rc = {})".format(node_id, rc))
+        else:
+            self.node_pids[node_id].terminate()
+            
+        del self.node_pids[node_id]        
                     
 
     def receive_message(self, msg_frames):
@@ -250,7 +257,15 @@ class ZMQBackend:
             
                 if tries_left == 0:
                     log.warning("Node %s did not respond to hello message" % node_id)
-                    self.ds.nodes[node_id].set_state(Node.STATE_FAILED)
+                    
+                    # Check whether the node has died
+                    rc = self.node_pids[node_id].poll()
+                    if rc is not None:
+                        self.ds.nodes[node_id].set_state(Node.STATE_CRASHED)
+                        log.warning("Node %s has crashed (rc = %i)" % (node_id, rc))
+                        self.loop.stop()
+                    else:
+                        self.ds.nodes[node_id].set_state(Node.STATE_FAILED)
                     
             
             self.loop.add_timeout(self.loop.time() + 0.5, hello_sender, tries_left = 5)

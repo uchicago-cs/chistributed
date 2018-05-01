@@ -29,6 +29,7 @@
 
 import cmd2
 import time
+import sys
 
 from cmd2 import options
 from optparse import make_option
@@ -67,9 +68,18 @@ class Interpreter(cmd2.Cmd):
             
             if not opts.no_wait:
                 self.ds.nodes[node_id].wait_for_state(Node.STATE_RUNNING)
+                
+                if self.ds.nodes[node_id].state == Node.STATE_FAILED:
+                    print("Node {} is running but in a failed state".format(node_id))
+                elif self.ds.nodes[node_id].state == Node.STATE_CRASHED:
+                    print("Node {} crashed on startup".format(node_id))
+                    print("Cannot continue. Exiting.")
+                    return self.do_quit(None)
+                
         except ChistributedException as ce:
             print("Error when starting node %s: %s" % (node_id, ce))
-            
+            print("Cannot continue. Exiting.")
+            return self.do_quit(None)          
 
 
     @options([make_option('-n', '--node_id', type="string"),
