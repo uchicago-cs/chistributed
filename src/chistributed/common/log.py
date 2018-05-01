@@ -40,7 +40,7 @@ def init_logging(verbose = False, debug = False):
         level = logging.WARNING
     
     logging.basicConfig(level=level,
-                format='%(asctime)s [%(name)s] %(levelname)s: %(message)s')    
+                format='%(asctime)s [%(name)s] %(levelname)s: %(message)s')
     
 
 def log(msg, func):
@@ -48,6 +48,9 @@ def log(msg, func):
 
 def debug(msg):
     log(msg, logging.getLogger('chistributed').debug)
+
+def error(msg):
+    log(msg, logging.getLogger('chistributed').error)
 
 def warning(msg):
     log(msg, logging.getLogger('chistributed').warning)
