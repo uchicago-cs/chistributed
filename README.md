@@ -14,7 +14,7 @@ First, clone chistributed into any directory you want:
 
 Inside the chistributed directory, run the following:
 
-    pip install --user -e .
+    pip3 install --user -e .
 
 Finally, change your $PATH (you may want to include this in your `.bashrc`
 file to make sure it gets set correctly every time you log in:
