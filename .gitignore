@@ -1,2 +1,4 @@
 *.pyc
 *~
+.eggs
+src/chistributed.egg-info
