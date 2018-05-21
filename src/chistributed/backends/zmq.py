@@ -1,6 +1,8 @@
 # Needed so we can import from the global "zmq" package
 
 
+from threading import Lock
+
 import json
 import subprocess
 import zmq
@@ -76,6 +78,8 @@ class ZMQBackend:
         self.pub_sock.bind(pub_endpoint)
         # ZMQStream used for non-blocking operations via IOLoop
         self.pub = zmqstream.ZMQStream(self.pub_sock, self.loop)
+        # Protect PUB socket from concurrent sends
+        self.pub_lock = Lock()
 
         # ROUTER socket for receiving messages from nodes
         self.router_endpoint = router_endpoint
@@ -235,6 +239,8 @@ class ZMQBackend:
         
         log.debug("SEND %s: %s" % (frames[0], frames[2]))
 
+        self.pub_lock.acquire()
+
         self.pub.send_multipart(frames)
         
         # This shouldn't be necessary but, for some reason, pyzmq stops
@@ -243,6 +249,8 @@ class ZMQBackend:
         # Need to revisit this at some point, but this at least ensures
         # that messages get sent.
         self.pub.flush()
+
+        self.pub_lock.release()
 
     def __hello_callback(self, node_id):
         zmq_msg = ZMQMessage(node_id, {'type': 'hello', 'destination': [node_id]})
