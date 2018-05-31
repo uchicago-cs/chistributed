@@ -55,7 +55,7 @@ setup(name='chistributed',
                            "tornado >= 5.0.2",
                            "click >= 5.1",
                            "pyyaml >= 3.11",
-                           "cmd2 >= 0.8.5",
+                           "cmd2 == 0.8.7",
                            "colorama >= 0.3.9"
                          ],
       setup_requires = [ "setuptools_git >= 1.0" ],
