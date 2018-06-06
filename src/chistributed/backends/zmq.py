@@ -253,7 +253,7 @@ class ZMQBackend:
         self.pub_lock.release()
 
     def __hello_callback(self, node_id):
-        zmq_msg = ZMQMessage(node_id, {'type': 'hello', 'destination': [node_id]})
+        zmq_msg = ZMQMessage(node_id, {'type': 'hello', 'destination': node_id})
         
         def callback():
             def hello_sender(tries_left):
